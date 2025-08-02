@@ -38,6 +38,13 @@ const makeRazorSyncRequest = async (endpoint, method = 'GET', body = null) => {
       throw new Error(`RazorSync API Error: ${response.status} - ${errorText}`)
     }
     
+    // Check for empty response (common when work order doesn't exist)
+    const contentLength = response.headers.get('content-length')
+    if (contentLength === '0') {
+      console.log(`⚠️ RazorSync ${method} ${endpoint}: Empty response (likely not found)`)
+      return null
+    }
+    
     // Some endpoints might return empty responses for successful operations
     const contentType = response.headers.get('content-type')
     if (contentType && contentType.includes('application/json')) {
@@ -58,10 +65,23 @@ const makeRazorSyncRequest = async (endpoint, method = 'GET', body = null) => {
 export const getWorkOrder = async (workOrderId) => {
   try {
     const result = await makeRazorSyncRequest(`/WorkOrder/${workOrderId}`)
+    
+    // Handle the case where RazorSync returns empty response for non-existent work orders
+    if (!result) {
+      throw new Error(`Work order ${workOrderId} not found in RazorSync (empty response)`)
+    }
+    
     return result
   } catch (error) {
     console.error(`Failed to get work order ${workOrderId}:`, error.message)
-    throw new Error(`Work order ${workOrderId} not found: ${error.message}`)
+    
+    // If it's already our "not found" error, re-throw as is
+    if (error.message.includes('not found in RazorSync')) {
+      throw error
+    }
+    
+    // For other errors, wrap them
+    throw new Error(`Failed to fetch work order ${workOrderId}: ${error.message}`)
   }
 }
 
@@ -72,7 +92,17 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
   try {
     // STEP 1: API GET - Fetch current work order data using RazorSync ID
     console.log(`📥 Step 1: Fetching work order ${razorSyncId} from RazorSync API...`)
-    const currentWorkOrder = await getWorkOrder(razorSyncId)
+    
+    let currentWorkOrder
+    try {
+      currentWorkOrder = await getWorkOrder(razorSyncId)
+    } catch (error) {
+      // Handle specific "not found" errors more gracefully
+      if (error.message.includes('not found in RazorSync')) {
+        throw new Error(`Work order ${razorSyncId} not found in RazorSync`)
+      }
+      throw error
+    }
     
     if (!currentWorkOrder) {
       throw new Error(`Work order ${razorSyncId} not found in RazorSync`)
