@@ -596,4 +596,14 @@ const RazorSyncStatusUpdater = () => {
   );
 };
 
+export default RazorSyncStatusUpdater;                <p>Enter a work order ID and click search to view details</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export default RazorSyncStatusUpdater;
