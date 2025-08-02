@@ -1,25 +1,20 @@
-// services/razorsync.js
+// services/razorsync.js - Updated to use Vercel API routes for server-to-server communication
 const RAZORSYNC_CONFIG = {
   token: import.meta.env.VITE_RAZORSYNC_TOKEN,
   host: import.meta.env.VITE_RAZORSYNC_HOST || 'vallus.0.razorsync.com',
   serverName: import.meta.env.VITE_RAZORSYNC_SERVER || 'vallus',
-  baseUrl: `https://${import.meta.env.VITE_RAZORSYNC_SERVER || 'vallus'}.0.razorsync.com/ApiService.svc`
+  baseUrl: `https://${import.meta.env.VITE_RAZORSYNC_SERVER || 'vallus'}.0.razorsync.com/ApiService.svc`,
+  // Use Vercel API routes to bypass CORS
+  apiBaseUrl: '/api/razorsync'
 }
 
-// Base API call function with proper headers and enhanced logging
+// Base API call function using Vercel API routes
 const makeRazorSyncRequest = async (endpoint, method = 'GET', body = null) => {
-  const url = `${RAZORSYNC_CONFIG.baseUrl}${endpoint}`
+  // Use Vercel API routes instead of direct RazorSync API calls
+  const url = `${RAZORSYNC_CONFIG.apiBaseUrl}${endpoint}`
   
   const headers = {
-    'Content-Type': 'application/json',
-    'Token': RAZORSYNC_CONFIG.token,
-    'Host': RAZORSYNC_CONFIG.host,
-    'ServerName': RAZORSYNC_CONFIG.serverName,
-    'Connection': 'Keep-Alive'
-  }
-
-  if (body && method !== 'GET') {
-    headers['Content-Length'] = JSON.stringify(body).length.toString()
+    'Content-Type': 'application/json'
   }
 
   const config = {
@@ -29,45 +24,21 @@ const makeRazorSyncRequest = async (endpoint, method = 'GET', body = null) => {
   }
 
   try {
-    console.log(`🌐 RazorSync ${method} ${endpoint}:`, body ? 'with data' : 'no data')
-    console.log(`📡 Full URL: ${url}`)
-    console.log(`📋 Headers:`, headers)
-    
+    console.log(`🌐 Vercel API ${method} ${endpoint}:`, body ? 'with data' : 'no data')
     const response = await fetch(url, config)
     
-    console.log(`📊 Response received:`)
-    console.log(`   - Status: ${response.status}`)
-    console.log(`   - OK: ${response.ok}`)
-    console.log(`   - Status Text: ${response.statusText}`)
-    console.log(`   - Content-Type: ${response.headers.get('content-type')}`)
-    console.log(`   - Content-Length: ${response.headers.get('content-length')}`)
-    
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`❌ RazorSync API Error: ${response.status} - ${errorText}`)
-      throw new Error(`RazorSync API Error: ${response.status} - ${errorText}`)
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      console.error(`❌ Vercel API Error: ${response.status} - ${errorData.error}`)
+      throw new Error(`API Error: ${response.status} - ${errorData.error}`)
     }
     
-    // Check for empty response (common when work order doesn't exist)
-    const contentLength = response.headers.get('content-length')
-    if (contentLength === '0') {
-      console.log(`⚠️ RazorSync ${method} ${endpoint}: Empty response (likely not found)`)
-      return null
-    }
+    const result = await response.json()
+    console.log(`✅ Vercel API ${method} ${endpoint} success:`, result ? 'data received' : 'no data')
+    return result
     
-    // Some endpoints might return empty responses for successful operations
-    const contentType = response.headers.get('content-type')
-    if (contentType && contentType.includes('application/json')) {
-      const result = await response.json()
-      console.log(`✅ RazorSync ${method} ${endpoint} success:`, result ? 'data received' : 'no data')
-      console.log(`📦 Actual data:`, result)
-      return result
-    }
-    
-    console.log(`✅ RazorSync ${method} ${endpoint} success: non-JSON response`)
-    return null
   } catch (error) {
-    console.error('❌ RazorSync API Error:', error)
+    console.error('❌ Vercel API Error:', error)
     throw error
   }
 }
@@ -75,27 +46,20 @@ const makeRazorSyncRequest = async (endpoint, method = 'GET', body = null) => {
 // Get work order details by RazorSync ID
 export const getWorkOrder = async (workOrderId) => {
   try {
-    const result = await makeRazorSyncRequest(`/WorkOrder/${workOrderId}`)
-    
-    // Handle the case where RazorSync returns empty response for non-existent work orders
-    if (!result) {
-      throw new Error(`Work order ${workOrderId} not found in RazorSync (empty response)`)
-    }
-    
+    const result = await makeRazorSyncRequest(`/workorder/${workOrderId}`)
     return result
   } catch (error) {
     console.error(`Failed to get work order ${workOrderId}:`, error.message)
     
-    // If it's already our "not found" error, re-throw as is
-    if (error.message.includes('not found in RazorSync')) {
-      throw error
+    // Check if it's a 404 (not found) error
+    if (error.message.includes('404')) {
+      throw new Error(`Work order ${workOrderId} not found in RazorSync`)
     }
     
     // For other errors, wrap them
     throw new Error(`Failed to fetch work order ${workOrderId}: ${error.message}`)
   }
 }
-
 // IMPROVED: 2-step API update using RazorSync ID (recommended approach)
 export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
   console.log(`🔄 Starting 2-step update for RazorSync ID ${razorSyncId} to status ${statusId}`)
@@ -141,11 +105,6 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
       StatusId: parseInt(statusId)
     }
     
-    // Remove any read-only fields that shouldn't be sent back
-    delete updateData.CreatedDate
-    delete updateData.ModifiedDate
-    delete updateData.LastModifiedDate
-    
     console.log(`🔧 Update payload prepared:`, {
       id: updateData.Id,
       customId: updateData.CustomId,
@@ -154,7 +113,7 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
       fieldsCount: Object.keys(updateData).length
     })
     
-    const updateResult = await makeRazorSyncRequest(`/WorkOrder`, 'PUT', updateData)
+    const updateResult = await makeRazorSyncRequest(`/workorder/${razorSyncId}`, 'PUT', updateData)
     
     console.log(`✅ Step 2 Success: Updated work order ${razorSyncId} status to ${statusId}`)
     
@@ -184,7 +143,7 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
 
 // Delete work order
 export const deleteWorkOrder = async (workOrderId) => {
-  return makeRazorSyncRequest(`/WorkOrder/${workOrderId}`, 'DELETE')
+  return makeRazorSyncRequest(`/workorder/${workOrderId}`, 'DELETE')
 }
 
 // Batch update work orders (sequential to avoid rate limiting)
@@ -222,7 +181,7 @@ export const batchUpdateWorkOrders = async (workOrderUpdates, onProgress = null)
 // Get available statuses (if RazorSync provides this endpoint)
 export const getAvailableStatuses = async () => {
   try {
-    return makeRazorSyncRequest('/Settings/Statuses')
+    return makeRazorSyncRequest('/settings/statuses')
   } catch (error) {
     // Fallback to predefined statuses if endpoint doesn't exist
     console.warn('Could not fetch statuses from RazorSync, using fallback')
@@ -234,7 +193,7 @@ export const getAvailableStatuses = async () => {
 export const testConnection = async () => {
   try {
     // Try a simple API call to test connectivity
-    await makeRazorSyncRequest('/Settings/CompanyInfo')
+    await makeRazorSyncRequest('/settings/companyinfo')
     return { success: true, message: 'Connection successful' }
   } catch (error) {
     return { 

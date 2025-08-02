@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vercel API Routes Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .log { background: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 5px; height: 400px; overflow-y: auto; }
+        .button { background: #007cba; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 10px 5px; }
+        .button:hover { background: #005a8a; }
+        .success { color: #008000; }
+        .error { color: #ff0000; }
+        .warning { color: #ff8800; }
+    </style>
+</head>
+<body>
+    <h1>Vercel API Routes Test</h1>
+    <p>Testing server-to-server communication with RazorSync API</p>
+    
+    <button class="button" onclick="testGetWorkOrder()">Test GET Work Order 60254</button>
+    <button class="button" onclick="testGetNonExistent()">Test GET Non-existent WO</button>
+    <button class="button" onclick="testUpdateWorkOrder()">Test PUT Update Status</button>
+    <button class="button" onclick="clearLog()">Clear Log</button>
+    
+    <div id="log" class="log">
+        <p>Click a test button to start...</p>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log')
+            const timestamp = new Date().toLocaleTimeString()
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : ''
+            logDiv.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`
+            logDiv.scrollTop = logDiv.scrollHeight
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '<p>Log cleared...</p>'
+        }
+
+        async function testGetWorkOrder() {
+            log('🚀 Testing GET work order 60254 via Vercel API route...')
+            
+            try {
+                const response = await fetch('/api/razorsync/workorder/60254', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                
+                log(`📊 Response status: ${response.status}`, response.ok ? 'success' : 'error')
+                
+                if (response.ok) {
+                    const data = await response.json()
+                    log(`✅ Success! Work order data:`, 'success')
+                    log(`📦 ${JSON.stringify(data, null, 2)}`)
+                } else {
+                    const error = await response.json()
+                    log(`❌ Error: ${error.error}`, 'error')
+                }
+                
+            } catch (error) {
+                log(`❌ Network error: ${error.message}`, 'error')
+            }
+        }
+
+        async function testGetNonExistent() {
+            log('🚀 Testing GET non-existent work order 99999...')
+            
+            try {
+                const response = await fetch('/api/razorsync/workorder/99999', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                
+                log(`📊 Response status: ${response.status}`, response.status === 404 ? 'success' : 'warning')
+                
+                const data = await response.json()
+                if (response.status === 404) {
+                    log(`✅ Correctly detected non-existent work order`, 'success')
+                    log(`📦 Error: ${data.error}`)
+                } else {
+                    log(`⚠️ Unexpected response for non-existent work order`, 'warning')
+                    log(`📦 ${JSON.stringify(data, null, 2)}`)
+                }
+                
+            } catch (error) {
+                log(`❌ Network error: ${error.message}`, 'error')
+            }
+        }
+
+        async function testUpdateWorkOrder() {
+            log('🚀 Testing PUT update work order 60254 status...')
+            
+            // First get the current work order data
+            try {
+                log('📥 Step 1: Getting current work order data...')
+                const getResponse = await fetch('/api/razorsync/workorder/60254')
+                
+                if (!getResponse.ok) {
+                    const error = await getResponse.json()
+                    log(`❌ Failed to get work order: ${error.error}`, 'error')
+                    return
+                }
+                
+                const currentData = await getResponse.json()
+                log(`✅ Got current data, current status: ${currentData.StatusId}`, 'success')
+                
+                // Update with same status (safe test)
+                log('📤 Step 2: Updating work order...')
+                const updateData = {
+                    ...currentData,
+                    StatusId: currentData.StatusId // Keep same status for safe testing
+                }
+                
+                const putResponse = await fetch('/api/razorsync/workorder/60254', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(updateData)
+                })
+                
+                log(`📊 PUT Response status: ${putResponse.status}`, putResponse.ok ? 'success' : 'error')
+                
+                if (putResponse.ok) {
+                    const result = await putResponse.json()
+                    log(`✅ Successfully updated work order!`, 'success')
+                    log(`📦 Result: ${JSON.stringify(result, null, 2)}`)
+                } else {
+                    const error = await putResponse.json()
+                    log(`❌ PUT Error: ${error.error}`, 'error')
+                }
+                
+            } catch (error) {
+                log(`❌ Network error: ${error.message}`, 'error')
+            }
+        }
+    </script>
+</body>
+</html>
