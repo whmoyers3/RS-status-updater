@@ -6,15 +6,11 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// Get work orders with improved filtering and joins
+// Get work orders with improved filtering (manual joins)
 export const getWorkOrders = async (filters = {}) => {
   let query = supabase
     .from('rs_work_orders')
-    .select(`
-      *,
-      rs_status_lookup!inner(status_id, status_description, is_complete),
-      fieldworkers!inner(id, full_name)
-    `)
+    .select('*')
     .order('rs_start_date', { ascending: true }) // Changed to ASC to match Metabase
 
   // Apply filters at database level for better performance
@@ -46,18 +42,31 @@ export const getWorkOrders = async (filters = {}) => {
     throw new Error(`Failed to fetch work orders: ${error.message}`)
   }
 
-  return workOrders || []
+  // Manually fetch status and fieldworker data for enrichment
+  const [statusData, fieldworkerData] = await Promise.all([
+    getStatuses(),
+    getFieldworkers()
+  ])
+
+  // Create lookup maps for better performance
+  const statusMap = new Map(statusData.map(status => [status.status_id, status]))
+  const fieldworkerMap = new Map(fieldworkerData.map(fw => [fw.id, fw]))
+
+  // Combine the data manually
+  const enrichedWorkOrders = (workOrders || []).map(workOrder => ({
+    ...workOrder,
+    rs_status_lookup: statusMap.get(workOrder.rs_status_id) || null,
+    fieldworkers: fieldworkerMap.get(workOrder.rs_field_worker_id) || null
+  }))
+
+  return enrichedWorkOrders
 }
 
-// Get work order by ID with proper joins
+// Get work order by ID (manual joins)
 export const getWorkOrderById = async (id) => {
   const { data: workOrder, error } = await supabase
     .from('rs_work_orders')
-    .select(`
-      *,
-      rs_status_lookup!inner(status_id, status_description, is_complete),
-      fieldworkers!inner(id, full_name)
-    `)
+    .select('*')
     .or(`rs_id.eq.${id},rs_custom_id.eq.${id}`)
     .single()
 
@@ -68,7 +77,21 @@ export const getWorkOrderById = async (id) => {
     throw new Error(`Failed to fetch work order: ${error.message}`)
   }
 
-  return workOrder
+  // Manually fetch related data
+  const [statusData, fieldworkerData] = await Promise.all([
+    getStatuses(),
+    getFieldworkers()
+  ])
+
+  const statusMap = new Map(statusData.map(status => [status.status_id, status]))
+  const fieldworkerMap = new Map(fieldworkerData.map(fw => [fw.id, fw]))
+
+  // Enrich the work order with related data
+  return {
+    ...workOrder,
+    rs_status_lookup: statusMap.get(workOrder.rs_status_id) || null,
+    fieldworkers: fieldworkerMap.get(workOrder.rs_field_worker_id) || null
+  }
 }
 
 // Get all status options
