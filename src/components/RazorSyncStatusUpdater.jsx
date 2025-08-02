@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, RefreshCw, Trash2, AlertCircle, CheckCircle, Clock, Edit3, Users } from 'lucide-react';
+import { Search, RefreshCw, Trash2, AlertCircle, CheckCircle, Clock, Edit3, Users, ChevronUp, ChevronDown } from 'lucide-react';
 import { useWorkOrders } from '../hooks/useWorkOrders';
 import { getWorkOrderById, getStatuses, getFieldworkers } from '../services/supabase';
 import { updateWorkOrderStatus, deleteWorkOrder } from '../services/razorsync';
@@ -17,19 +17,19 @@ const RazorSyncStatusUpdater = () => {
   const [notification, setNotification] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(50);
+  const [showFutureEvents, setShowFutureEvents] = useState(false);
+  const [sortConfig, setSortConfig] = useState({ key: 'rs_start_date', direction: 'desc' });
 
-  // Filters for work orders
   const [filters, setFilters] = useState({
     incomplete_only: true,
     field_worker_id: null,
     limit: itemsPerPage,
-    offset: 0
+    offset: 0,
+    show_future: false
   });
 
-  // Use the custom hook for work orders
   const { workOrders, loading, error, totalCount, refresh } = useWorkOrders(filters, true);
 
-  // Load statuses and fieldworkers on component mount
   useEffect(() => {
     const loadInitialData = async () => {
       try {
@@ -47,14 +47,14 @@ const RazorSyncStatusUpdater = () => {
     loadInitialData();
   }, []);
 
-  // Update filters when page or field worker changes
   useEffect(() => {
     setFilters(prev => ({
       ...prev,
       field_worker_id: selectedFieldWorker || null,
-      offset: (currentPage - 1) * itemsPerPage
+      offset: (currentPage - 1) * itemsPerPage,
+      show_future: showFutureEvents
     }));
-  }, [selectedFieldWorker, currentPage, itemsPerPage]);
+  }, [selectedFieldWorker, currentPage, itemsPerPage, showFutureEvents]);
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type });
@@ -85,21 +85,18 @@ const RazorSyncStatusUpdater = () => {
 
     setIsLoading(true);
     try {
-      // Update each selected work order via RazorSync API
       const updatePromises = selectedOrders.map(orderId => 
         updateWorkOrderStatus(orderId, selectedStatus)
       );
       
       await Promise.all(updatePromises);
-      
-      // Refresh data from Supabase
-      refresh();
+      await refresh();
       
       setSelectedOrders([]);
       setSelectedStatus('');
       showNotification(`Successfully updated ${selectedOrders.length} work order(s)`);
     } catch (error) {
-      showNotification('Failed to update work orders', 'error');
+      showNotification(`Failed to update work orders: ${error.message}`, 'error');
       console.error('Batch update error:', error);
     } finally {
       setIsLoading(false);
@@ -124,7 +121,7 @@ const RazorSyncStatusUpdater = () => {
         showNotification('Work order not found', 'error');
       }
     } catch (error) {
-      showNotification('Search failed', 'error');
+      showNotification(`Search failed: ${error.message}`, 'error');
       console.error('Search error:', error);
     } finally {
       setIsLoading(false);
@@ -138,13 +135,12 @@ const RazorSyncStatusUpdater = () => {
     try {
       await updateWorkOrderStatus(searchResult.rs_id, newStatusId);
       
-      // Refresh the search result
       const updated = await getWorkOrderById(searchResult.rs_id);
       setSearchResult(updated);
       
       showNotification('Work order status updated successfully');
     } catch (error) {
-      showNotification('Failed to update work order status', 'error');
+      showNotification(`Failed to update work order status: ${error.message}`, 'error');
       console.error('Single update error:', error);
     } finally {
       setIsLoading(false);
@@ -165,17 +161,72 @@ const RazorSyncStatusUpdater = () => {
         setSearchId('');
       }
       
-      // Refresh data
-      refresh();
-      
+      await refresh();
       showNotification('Work order deleted successfully');
     } catch (error) {
-      showNotification('Failed to delete work order', 'error');
+      showNotification(`Failed to delete work order: ${error.message}`, 'error');
       console.error('Delete error:', error);
     } finally {
       setIsLoading(false);
     }
   };
+
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const getSortedWorkOrders = () => {
+    if (!workOrders) return [];
+    
+    const sortedOrders = [...workOrders].sort((a, b) => {
+      let aValue = a[sortConfig.key];
+      let bValue = b[sortConfig.key];
+      
+      if (sortConfig.key === 'status_description') {
+        aValue = a.rs_status_lookup?.status_description || '';
+        bValue = b.rs_status_lookup?.status_description || '';
+      } else if (sortConfig.key === 'fieldworker_name') {
+        aValue = a.fieldworkers?.full_name || '';
+        bValue = b.fieldworkers?.full_name || '';
+      }
+      
+      if (sortConfig.key === 'rs_start_date') {
+        aValue = new Date(aValue || 0);
+        bValue = new Date(bValue || 0);
+      }
+      
+      if (typeof aValue === 'string') {
+        aValue = aValue.toLowerCase();
+        bValue = bValue.toLowerCase();
+      }
+      
+      if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+    
+    return sortedOrders;
+  };
+
+  const SortHeader = ({ column, children }) => (
+    <th 
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+      onClick={() => handleSort(column)}
+    >
+      <div className="flex items-center space-x-1">
+        <span>{children}</span>
+        {sortConfig.key === column && (
+          sortConfig.direction === 'asc' ? 
+            <ChevronUp className="w-4 h-4" /> : 
+            <ChevronDown className="w-4 h-4" />
+        )}
+      </div>
+    </th>
+  );
 
   const totalPages = Math.ceil(totalCount / itemsPerPage);
 
@@ -198,6 +249,18 @@ const RazorSyncStatusUpdater = () => {
     }
   };
 
+  const filterWorkOrdersByDate = (orders) => {
+    if (!showFutureEvents) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return orders.filter(wo => {
+        const startDate = new Date(wo.rs_start_date);
+        return startDate <= today;
+      });
+    }
+    return orders;
+  };
+
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -216,9 +279,10 @@ const RazorSyncStatusUpdater = () => {
     );
   }
 
+  const sortedAndFilteredOrders = filterWorkOrdersByDate(getSortedWorkOrders());
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
@@ -238,7 +302,6 @@ const RazorSyncStatusUpdater = () => {
         </div>
       </div>
 
-      {/* Notification */}
       {notification && (
         <div className={`fixed top-4 right-4 z-50 p-4 rounded-md shadow-lg ${
           notification.type === 'success' ? 'bg-green-500' : 'bg-red-500'
@@ -253,9 +316,7 @@ const RazorSyncStatusUpdater = () => {
         </div>
       )}
 
-      {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Tab Navigation */}
         <div className="mb-8">
           <div className="border-b border-gray-200">
             <nav className="-mb-px flex space-x-8">
@@ -285,13 +346,11 @@ const RazorSyncStatusUpdater = () => {
           </div>
         </div>
 
-        {/* Batch Updates Tab */}
         {activeTab === 'batch' && (
           <div className="space-y-6">
-            {/* Filters */}
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Filter by Status</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Field Worker
@@ -307,6 +366,17 @@ const RazorSyncStatusUpdater = () => {
                     ))}
                   </select>
                 </div>
+                <div className="flex items-center">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={showFutureEvents}
+                      onChange={(e) => setShowFutureEvents(e.target.checked)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Show Future Events</span>
+                  </label>
+                </div>
                 <div className="flex items-end">
                   <button
                     onClick={refresh}
@@ -319,7 +389,6 @@ const RazorSyncStatusUpdater = () => {
               </div>
             </div>
 
-            {/* Batch Update Controls */}
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Select New Status</h3>
               <div className="flex flex-col sm:flex-row gap-4">
@@ -345,11 +414,10 @@ const RazorSyncStatusUpdater = () => {
               </div>
             </div>
 
-            {/* Work Orders Table */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-200">
                 <h3 className="text-lg font-medium text-gray-900">
-                  Showing {workOrders.length} of {totalCount} results
+                  Showing {sortedAndFilteredOrders.length} of {totalCount} results
                 </h3>
               </div>
               
@@ -358,144 +426,77 @@ const RazorSyncStatusUpdater = () => {
                   <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
                   <span className="ml-2 text-gray-600">Loading work orders...</span>
                 </div>
-              ) : workOrders.length === 0 ? (
+              ) : sortedAndFilteredOrders.length === 0 ? (
                 <div className="text-center py-12">
                   <Clock className="w-12 h-12 mx-auto mb-3 text-gray-400" />
                   <p className="text-gray-500">No work orders found matching your criteria</p>
                 </div>
               ) : (
-                <>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <input
+                            type="checkbox"
+                            checked={selectedOrders.length === sortedAndFilteredOrders.length && sortedAndFilteredOrders.length > 0}
+                            onChange={(e) => handleSelectAll(e.target.checked)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </th>
+                        <SortHeader column="rs_id">RazorSync ID</SortHeader>
+                        <SortHeader column="rs_custom_id">Custom ID</SortHeader>
+                        <SortHeader column="description">Description</SortHeader>
+                        <SortHeader column="rs_start_date">Start Date</SortHeader>
+                        <SortHeader column="fieldworker_name">Field Worker</SortHeader>
+                        <SortHeader column="status_description">Status</SortHeader>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {sortedAndFilteredOrders.map((workOrder) => (
+                        <tr key={workOrder.rs_id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
                             <input
                               type="checkbox"
-                              checked={selectedOrders.length === workOrders.length && workOrders.length > 0}
-                              onChange={(e) => handleSelectAll(e.target.checked)}
+                              checked={selectedOrders.includes(workOrder.rs_id)}
+                              onChange={(e) => handleSelectOrder(workOrder.rs_id, e.target.checked)}
                               className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                             />
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            RazorSync ID
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Custom ID
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Description
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Start Date
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Field Worker
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Status
-                          </th>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {workOrder.rs_id}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {workOrder.rs_custom_id}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
+                            {workOrder.description}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {formatDate(workOrder.rs_start_date)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {workOrder.fieldworkers?.full_name || 'Unassigned'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              getStatusBadgeColor(workOrder.rs_status_lookup?.is_complete)
+                            }`}>
+                              {workOrder.rs_status_lookup?.status_description || 'Unknown'}
+                            </span>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {workOrders.map((workOrder) => (
-                          <tr key={workOrder.rs_id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <input
-                                type="checkbox"
-                                checked={selectedOrders.includes(workOrder.rs_id)}
-                                onChange={(e) => handleSelectOrder(workOrder.rs_id, e.target.checked)}
-                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                              />
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              {workOrder.rs_id}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {workOrder.rs_custom_id}
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
-                              {workOrder.description}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {formatDate(workOrder.rs_start_date)}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {workOrder.fieldworkers?.full_name || 'Unassigned'}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                getStatusBadgeColor(workOrder.rs_status_lookup?.is_complete)
-                              }`}>
-                                {workOrder.rs_status_lookup?.status_description || 'Unknown'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Pagination */}
-                  {totalPages > 1 && (
-                    <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-                      <div className="flex-1 flex justify-between sm:hidden">
-                        <button
-                          onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                          disabled={currentPage === 1}
-                          className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
-                        >
-                          Previous
-                        </button>
-                        <button
-                          onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                          disabled={currentPage === totalPages}
-                          className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
-                        >
-                          Next
-                        </button>
-                      </div>
-                      <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm text-gray-700">
-                            Showing <span className="font-medium">{((currentPage - 1) * itemsPerPage) + 1}</span> to{' '}
-                            <span className="font-medium">
-                              {Math.min(currentPage * itemsPerPage, totalCount)}
-                            </span> of{' '}
-                            <span className="font-medium">{totalCount}</span> results
-                          </p>
-                        </div>
-                        <div>
-                          <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
-                            <button
-                              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                              disabled={currentPage === 1}
-                              className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
-                            >
-                              Previous
-                            </button>
-                            <button
-                              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                              disabled={currentPage === totalPages}
-                              className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
-                            >
-                              Next
-                            </button>
-                          </nav>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>
         )}
 
-        {/* Individual Lookup Tab */}
         {activeTab === 'individual' && (
           <div className="space-y-6">
-            {/* Search */}
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Search Work Order</h3>
               <div className="flex gap-4">
@@ -518,7 +519,6 @@ const RazorSyncStatusUpdater = () => {
               </div>
             </div>
 
-            {/* Search Result */}
             {searchResult && (
               <div className="bg-white rounded-lg shadow p-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Work Order Details</h3>
@@ -594,19 +594,6 @@ const RazorSyncStatusUpdater = () => {
       </div>
     </div>
   );
-};
-
-export default RazorSyncStatusUpdater;                <p>Enter a work order ID and click search to view details</p>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-export default RazorSyncStatusUpdater;  );
 };
 
 export default RazorSyncStatusUpdater;
