@@ -1,4 +1,4 @@
-// Vercel API function for RazorSync work order operations
+// Vercel API function for RazorSync work order operations - Fixed version
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -9,26 +9,26 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Extract work order ID from query parameters or URL
-  const workOrderId = req.query.id || req.query.workorder;
-
-  if (!workOrderId) {
-    return res.status(400).json({ error: 'Work order ID is required' });
-  }
-
-  // RazorSync configuration using environment variables
-  const RAZORSYNC_CONFIG = {
-    token: process.env.VITE_RAZORSYNC_TOKEN,
-    host: process.env.VITE_RAZORSYNC_HOST || 'vallus.0.razorsync.com',
-    serverName: process.env.VITE_RAZORSYNC_SERVER || 'vallus',
-    baseUrl: `https://${process.env.VITE_RAZORSYNC_SERVER || 'vallus'}.0.razorsync.com/ApiService.svc`
-  };
-
-  if (!RAZORSYNC_CONFIG.token) {
-    return res.status(500).json({ error: 'RazorSync token not configured' });
-  }
-
   try {
+    // Extract work order ID from query parameters
+    const workOrderId = req.query.id || req.query.workorder;
+
+    if (!workOrderId) {
+      return res.status(400).json({ error: 'Work order ID is required' });
+    }
+
+    // RazorSync configuration using environment variables
+    const RAZORSYNC_CONFIG = {
+      token: process.env.VITE_RAZORSYNC_TOKEN,
+      host: process.env.VITE_RAZORSYNC_HOST || 'vallus.0.razorsync.com',
+      serverName: process.env.VITE_RAZORSYNC_SERVER || 'vallus',
+      baseUrl: `https://${process.env.VITE_RAZORSYNC_SERVER || 'vallus'}.0.razorsync.com/ApiService.svc`
+    };
+
+    if (!RAZORSYNC_CONFIG.token) {
+      return res.status(500).json({ error: 'RazorSync token not configured' });
+    }
+
     if (req.method === 'GET') {
       console.log(`📥 Server-side GET request for work order ${workOrderId}`);
       
@@ -132,14 +132,6 @@ export default async function handler(req, res) {
       delete payload.CreatedDate;
       delete payload.CreateDate;
 
-      const url = `${RAZORSYNC_CONFIG.baseUrl}/WorkOrder`;
-      const headers = {
-        'Content-Type': 'application/json',
-        'Token': RAZORSYNC_CONFIG.token,
-        'Host': RAZORSYNC_CONFIG.host,
-        'ServerName': RAZORSYNC_CONFIG.serverName
-      };
-
       console.log(`🔧 Updating work order ${workOrderId} with cleaned payload:`, {
         id: payload.Id,
         statusId: payload.StatusId,
@@ -149,6 +141,14 @@ export default async function handler(req, res) {
         fieldCount: Object.keys(payload).length,
         hasModifiedDate: !!payload.LastChangeDate
       });
+
+      const url = `${RAZORSYNC_CONFIG.baseUrl}/WorkOrder`;
+      const headers = {
+        'Content-Type': 'application/json',
+        'Token': RAZORSYNC_CONFIG.token,
+        'Host': RAZORSYNC_CONFIG.host,
+        'ServerName': RAZORSYNC_CONFIG.serverName
+      };
 
       const response = await fetch(url, {
         method: 'PUT',
@@ -169,7 +169,6 @@ export default async function handler(req, res) {
             payloadFieldCount: Object.keys(payload).length,
             statusId: payload.StatusId
           }
-        });
         });
       }
 
