@@ -10,8 +10,8 @@ const RAZORSYNC_CONFIG = {
 
 // Base API call function using Vercel API routes
 const makeRazorSyncRequest = async (workOrderId, method = 'GET', body = null) => {
-  // Use Vercel API routes instead of direct RazorSync API calls
-  const url = `${RAZORSYNC_CONFIG.apiBaseUrl}/${workOrderId}`
+  // Use simple Vercel API routes
+  const url = `/api/workorder?id=${workOrderId}`
   
   const headers = {
     'Content-Type': 'application/json'
