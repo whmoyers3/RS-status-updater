@@ -53,11 +53,30 @@ export const getWorkOrder = async (workOrderId) => {
   return makeRazorSyncRequest(`/WorkOrder/${workOrderId}`)
 }
 
-// Update work order status
+// Update work order status - FIXED VERSION
 export const updateWorkOrderStatus = async (workOrderId, statusId) => {
+  // First, get the current work order data
+  const currentWorkOrder = await getWorkOrder(workOrderId)
+  
+  if (!currentWorkOrder) {
+    throw new Error(`Work order ${workOrderId} not found`)
+  }
+  
+  // Update the status while preserving all other fields
   const updateData = {
     Id: parseInt(workOrderId),
-    StatusId: parseInt(statusId)
+    StatusId: parseInt(statusId),
+    CustomId: currentWorkOrder.CustomId,
+    Description: currentWorkOrder.Description,
+    FieldWorkerId: currentWorkOrder.FieldWorkerId,
+    LocationId: currentWorkOrder.LocationId,
+    ActorId: currentWorkOrder.ActorId,
+    StartDate: currentWorkOrder.StartDate,
+    EndDate: currentWorkOrder.EndDate,
+    ServiceRequestId: currentWorkOrder.ServiceRequestId,
+    InvoicingMemo: currentWorkOrder.InvoicingMemo,
+    IsNotificationsDisable: currentWorkOrder.IsNotificationsDisable,
+    TaxNameId: currentWorkOrder.TaxNameId
   }
   
   return makeRazorSyncRequest(`/WorkOrder`, 'PUT', updateData)
@@ -99,6 +118,7 @@ export const batchUpdateWorkOrders = async (workOrderUpdates, onProgress = null)
   
   return results
 }
+
 // Get available statuses (if RazorSync provides this endpoint)
 export const getAvailableStatuses = async () => {
   try {
