@@ -6,22 +6,30 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// Get work orders with manual status and fieldworker joins
+// Get work orders with improved filtering and joins
 export const getWorkOrders = async (filters = {}) => {
   let query = supabase
     .from('rs_work_orders')
-    .select('*')
-    .order('rs_start_date', { ascending: false })
+    .select(`
+      *,
+      rs_status_lookup!inner(status_id, status_description, is_complete),
+      fieldworkers!inner(id, full_name)
+    `)
+    .order('rs_start_date', { ascending: true }) // Changed to ASC to match Metabase
 
-  // Apply filters
+  // Apply filters at database level for better performance
   if (filters.field_worker_id) {
     query = query.eq('rs_field_worker_id', filters.field_worker_id)
   }
 
-  // Filter future events if not requested
+  // Status filtering - if specific statuses selected, filter by them
+  if (filters.status_ids && filters.status_ids.length > 0) {
+    query = query.in('rs_status_id', filters.status_ids)
+  }
+
+  // Date filtering - use proper SQL comparison
   if (!filters.show_future) {
-    const today = new Date().toISOString().split('T')[0]
-    query = query.lte('rs_start_date', today + 'T23:59:59.999Z')
+    query = query.lt('rs_start_date', new Date().toISOString()) // Past dates only
   }
 
   if (filters.limit) {
@@ -38,38 +46,18 @@ export const getWorkOrders = async (filters = {}) => {
     throw new Error(`Failed to fetch work orders: ${error.message}`)
   }
 
-  // Manually fetch status and fieldworker data
-  const [statusData, fieldworkerData] = await Promise.all([
-    getStatuses(),
-    getFieldworkers()
-  ])
-
-  // Create lookup maps for better performance
-  const statusMap = new Map(statusData.map(status => [status.status_id, status]))
-  const fieldworkerMap = new Map(fieldworkerData.map(fw => [fw.id, fw]))
-
-  // Combine the data manually
-  const enrichedWorkOrders = workOrders.map(workOrder => ({
-    ...workOrder,
-    rs_status_lookup: statusMap.get(workOrder.rs_status_id) || null,
-    fieldworkers: fieldworkerMap.get(workOrder.rs_field_worker_id) || null
-  }))
-
-  // Apply incomplete filter after enrichment if needed
-  if (filters.incomplete_only) {
-    return enrichedWorkOrders.filter(wo => 
-      wo.rs_status_lookup && !wo.rs_status_lookup.is_complete
-    )
-  }
-
-  return enrichedWorkOrders
+  return workOrders || []
 }
 
-// Get work order by ID (RazorSync ID or Custom ID)
+// Get work order by ID with proper joins
 export const getWorkOrderById = async (id) => {
   const { data: workOrder, error } = await supabase
     .from('rs_work_orders')
-    .select('*')
+    .select(`
+      *,
+      rs_status_lookup!inner(status_id, status_description, is_complete),
+      fieldworkers!inner(id, full_name)
+    `)
     .or(`rs_id.eq.${id},rs_custom_id.eq.${id}`)
     .single()
 
@@ -80,21 +68,7 @@ export const getWorkOrderById = async (id) => {
     throw new Error(`Failed to fetch work order: ${error.message}`)
   }
 
-  // Manually fetch related data
-  const [statusData, fieldworkerData] = await Promise.all([
-    getStatuses(),
-    getFieldworkers()
-  ])
-
-  const statusMap = new Map(statusData.map(status => [status.status_id, status]))
-  const fieldworkerMap = new Map(fieldworkerData.map(fw => [fw.id, fw]))
-
-  // Enrich the work order with related data
-  return {
-    ...workOrder,
-    rs_status_lookup: statusMap.get(workOrder.rs_status_id) || null,
-    fieldworkers: fieldworkerMap.get(workOrder.rs_field_worker_id) || null
-  }
+  return workOrder
 }
 
 // Get all status options
@@ -106,6 +80,21 @@ export const getStatuses = async () => {
 
   if (error) {
     throw new Error(`Failed to fetch statuses: ${error.message}`)
+  }
+
+  return data
+}
+
+// Get incomplete statuses for default selection
+export const getIncompleteStatuses = async () => {
+  const { data, error } = await supabase
+    .from('rs_status_lookup')
+    .select('*')
+    .eq('is_complete', false)
+    .order('status_description')
+
+  if (error) {
+    throw new Error(`Failed to fetch incomplete statuses: ${error.message}`)
   }
 
   return data
@@ -125,15 +114,10 @@ export const getFieldworkers = async () => {
   return data
 }
 
-// Get incomplete work orders for the metabase report
-export const getIncompleteWorkOrders = async (filters = {}) => {
-  return getWorkOrders({
-    ...filters,
-    incomplete_only: true
-  })
-}
+// Remove the old getIncompleteWorkOrders function as it's no longer needed
+// The new filtering system handles this at the database level
 
-// Count total work orders with manual filtering
+// Count total work orders with better filtering
 export const getWorkOrdersCount = async (filters = {}) => {
   let query = supabase
     .from('rs_work_orders')
@@ -143,18 +127,21 @@ export const getWorkOrdersCount = async (filters = {}) => {
     query = query.eq('rs_field_worker_id', filters.field_worker_id)
   }
 
+  // Status filtering at database level
+  if (filters.status_ids && filters.status_ids.length > 0) {
+    query = query.in('rs_status_id', filters.status_ids)
+  }
+
+  // Date filtering
+  if (!filters.show_future) {
+    query = query.lt('rs_start_date', new Date().toISOString())
+  }
+
   const { count, error } = await query
 
   if (error) {
     throw new Error(`Failed to count work orders: ${error.message}`)
   }
 
-  // If incomplete_only filter is applied, we need to fetch and filter manually
-  if (filters.incomplete_only) {
-    // For count with incomplete filter, we need to fetch the data and filter
-    const workOrders = await getWorkOrders(filters)
-    return workOrders.length
-  }
-
-  return count
+  return count || 0
 }

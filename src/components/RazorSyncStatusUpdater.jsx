@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Search, RefreshCw, Trash2, AlertCircle, CheckCircle, Clock, Edit3, Users, ChevronUp, ChevronDown } from 'lucide-react';
 import { useWorkOrders } from '../hooks/useWorkOrders';
-import { getWorkOrderById, getStatuses, getFieldworkers } from '../services/supabase';
+import { getWorkOrderById, getStatuses, getFieldworkers, getIncompleteStatuses } from '../services/supabase';
 import { updateWorkOrderStatus, deleteWorkOrder } from '../services/razorsync';
+import MultiSelectDropdown from './MultiSelectDropdown';
 
 const RazorSyncStatusUpdater = () => {
   const [activeTab, setActiveTab] = useState('batch');
@@ -11,6 +12,7 @@ const RazorSyncStatusUpdater = () => {
   const [fieldworkers, setFieldworkers] = useState([]);
   const [selectedStatus, setSelectedStatus] = useState('');
   const [selectedFieldWorker, setSelectedFieldWorker] = useState('');
+  const [selectedStatusIds, setSelectedStatusIds] = useState([]); // New multi-select state
   const [searchId, setSearchId] = useState('');
   const [searchResult, setSearchResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -18,11 +20,11 @@ const RazorSyncStatusUpdater = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(50);
   const [showFutureEvents, setShowFutureEvents] = useState(false);
-  const [sortConfig, setSortConfig] = useState({ key: 'rs_start_date', direction: 'desc' });
+  const [sortConfig, setSortConfig] = useState({ key: 'rs_start_date', direction: 'asc' });
 
   const [filters, setFilters] = useState({
-    incomplete_only: true,
     field_worker_id: null,
+    status_ids: [], // Will be set to incomplete statuses by default
     limit: itemsPerPage,
     offset: 0,
     show_future: false
@@ -33,12 +35,25 @@ const RazorSyncStatusUpdater = () => {
   useEffect(() => {
     const loadInitialData = async () => {
       try {
-        const [statusData, fieldworkerData] = await Promise.all([
+        const [statusData, fieldworkerData, incompleteStatusData] = await Promise.all([
           getStatuses(),
-          getFieldworkers()
+          getFieldworkers(),
+          getIncompleteStatuses()
         ]);
+        
         setStatuses(statusData);
         setFieldworkers(fieldworkerData);
+        
+        // Set default selected statuses to all incomplete statuses
+        const defaultStatusIds = incompleteStatusData.map(status => status.status_id);
+        setSelectedStatusIds(defaultStatusIds);
+        
+        // Update filters with default incomplete statuses
+        setFilters(prev => ({
+          ...prev,
+          status_ids: defaultStatusIds
+        }));
+        
       } catch (err) {
         showNotification('Failed to load initial data', 'error');
       }
@@ -51,10 +66,11 @@ const RazorSyncStatusUpdater = () => {
     setFilters(prev => ({
       ...prev,
       field_worker_id: selectedFieldWorker || null,
+      status_ids: selectedStatusIds,
       offset: (currentPage - 1) * itemsPerPage,
       show_future: showFutureEvents
     }));
-  }, [selectedFieldWorker, currentPage, itemsPerPage, showFutureEvents]);
+  }, [selectedFieldWorker, selectedStatusIds, currentPage, itemsPerPage, showFutureEvents]);
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type });
@@ -363,7 +379,7 @@ const RazorSyncStatusUpdater = () => {
         {activeTab === 'batch' && (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Filter by Status</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Filter Work Orders</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -380,7 +396,24 @@ const RazorSyncStatusUpdater = () => {
                     ))}
                   </select>
                 </div>
-                <div className="flex items-center">
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Status Types
+                  </label>
+                  <MultiSelectDropdown
+                    options={statuses.map(status => ({
+                      value: status.status_id,
+                      label: `${status.status_description}${!status.is_complete ? ' (Incomplete)' : ''}`
+                    }))}
+                    selectedValues={selectedStatusIds}
+                    onChange={setSelectedStatusIds}
+                    placeholder="Select statuses..."
+                    className="w-full"
+                  />
+                </div>
+                
+                <div className="space-y-2">
                   <label className="flex items-center">
                     <input
                       type="checkbox"
@@ -390,13 +423,12 @@ const RazorSyncStatusUpdater = () => {
                     />
                     <span className="text-sm font-medium text-gray-700">Show Future Events</span>
                   </label>
-                </div>
-                <div className="flex items-end">
                   <button
                     onClick={refresh}
                     disabled={loading}
-                    className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:bg-gray-300 transition-colors"
+                    className="w-full px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:bg-gray-300 transition-colors"
                   >
+                    <RefreshCw className="w-4 h-4 inline mr-2" />
                     Refresh Data
                   </button>
                 </div>
