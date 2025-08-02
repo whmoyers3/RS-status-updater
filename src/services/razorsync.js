@@ -64,6 +64,14 @@ export const getWorkOrder = async (workOrderId) => {
 export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
   console.log(`🔄 Starting 2-step update for RazorSync ID ${razorSyncId} to status ${statusId}`)
   
+  // Ensure statusId is numeric
+  const numericStatusId = parseInt(statusId)
+  if (isNaN(numericStatusId)) {
+    throw new Error(`Invalid status ID: ${statusId} - must be numeric`)
+  }
+  
+  console.log(`✅ Status ID validation: ${statusId} -> ${numericStatusId}`)
+  
   try {
     // STEP 1: API GET - Fetch current work order data using RazorSync ID
     console.log(`📥 Step 1: Fetching work order ${razorSyncId} from RazorSync API...`)
@@ -87,6 +95,7 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
       id: currentWorkOrder.Id,
       customId: currentWorkOrder.CustomId,
       currentStatus: currentWorkOrder.StatusId,
+      currentStatusType: typeof currentWorkOrder.StatusId,
       description: currentWorkOrder.Description?.substring(0, 50) + '...'
     })
     
@@ -96,26 +105,28 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
     }
     
     // STEP 2: API PUT - Update status while preserving ALL other fields exactly as returned
-    console.log(`📤 Step 2: Updating work order ${razorSyncId} status from ${currentWorkOrder.StatusId} to ${statusId}...`)
+    console.log(`📤 Step 2: Updating work order ${razorSyncId} status from ${currentWorkOrder.StatusId} to ${numericStatusId}...`)
     
     const updateData = {
       // Preserve ALL fields exactly as returned by the API
       ...currentWorkOrder,
-      // Only change the status
-      StatusId: parseInt(statusId)
+      // Only change the status to the numeric value
+      StatusId: numericStatusId
     }
     
     console.log(`🔧 Update payload prepared:`, {
       id: updateData.Id,
       customId: updateData.CustomId,
       oldStatus: currentWorkOrder.StatusId,
+      oldStatusType: typeof currentWorkOrder.StatusId,
       newStatus: updateData.StatusId,
+      newStatusType: typeof updateData.StatusId,
       fieldsCount: Object.keys(updateData).length
     })
     
     const updateResult = await makeRazorSyncRequest(razorSyncId, 'PUT', updateData)
     
-    console.log(`✅ Step 2 Success: Updated work order ${razorSyncId} status to ${statusId}`)
+    console.log(`✅ Step 2 Success: Updated work order ${razorSyncId} status to ${numericStatusId}`)
     
     // Check if webhook was triggered for Supabase sync
     if (updateResult && updateResult.webhookTriggered) {
@@ -127,7 +138,7 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
       workOrderId: razorSyncId,
       customId: currentWorkOrder.CustomId,
       oldStatus: currentWorkOrder.StatusId,
-      newStatus: parseInt(statusId),
+      newStatus: numericStatusId,
       updateResult,
       message: updateResult?.message || 'Work order updated successfully'
     }

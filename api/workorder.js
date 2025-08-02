@@ -94,7 +94,7 @@ export default async function handler(req, res) {
         Description: updateData.Description,
         StartDate: updateData.StartDate,
         EndDate: updateData.EndDate,
-        StatusId: updateData.StatusId,
+        StatusId: parseInt(updateData.StatusId), // Ensure numeric
         FieldWorkerId: updateData.FieldWorkerId,
         LocationId: updateData.LocationId,
         ActorId: updateData.ActorId,
@@ -108,6 +108,16 @@ export default async function handler(req, res) {
         LastChangeDate: modifiedDate,
         ModifiedDate: modifiedDate
       };
+
+      // Validate that StatusId is numeric
+      if (isNaN(payload.StatusId)) {
+        console.error(`❌ Invalid StatusId: ${updateData.StatusId} - must be numeric`);
+        return res.status(400).json({ 
+          error: `Invalid StatusId: ${updateData.StatusId} - must be numeric`,
+          receivedStatusId: updateData.StatusId,
+          statusIdType: typeof updateData.StatusId
+        });
+      }
 
       // Remove any null/undefined values and Supabase-specific fields
       Object.keys(payload).forEach(key => {
@@ -133,6 +143,9 @@ export default async function handler(req, res) {
       console.log(`🔧 Updating work order ${workOrderId} with cleaned payload:`, {
         id: payload.Id,
         statusId: payload.StatusId,
+        statusIdType: typeof payload.StatusId,
+        originalStatusId: updateData.StatusId,
+        originalStatusIdType: typeof updateData.StatusId,
         fieldCount: Object.keys(payload).length,
         hasModifiedDate: !!payload.LastChangeDate
       });
