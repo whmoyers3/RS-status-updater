@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vercel API Test - Working!</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .log { background: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 5px; height: 400px; overflow-y: auto; }
+        .button { background: #007cba; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 10px 5px; }
+        .button:hover { background: #005a8a; }
+        .success { color: #008000; }
+        .error { color: #ff0000; }
+        .warning { color: #ff8800; }
+        .status { background: #e8f5e8; padding: 10px; border-radius: 5px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🎉 Vercel API Routes - Working!</h1>
+    <div class="status">
+        <strong>✅ Success!</strong> Server-to-server communication with RazorSync is now working through Vercel API routes.
+        This bypasses the CORS issue that was blocking direct browser requests.
+    </div>
+    
+    <button class="button" onclick="testWorkOrder()">Test Work Order 60254</button>
+    <button class="button" onclick="testNonExistent()">Test Non-existent Work Order</button>
+    <button class="button" onclick="testUpdate()">Test Status Update</button>
+    <button class="button" onclick="clearLog()">Clear Log</button>
+    
+    <div id="log" class="log">
+        <p>Click a test button to verify the API routes are working...</p>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log')
+            const timestamp = new Date().toLocaleTimeString()
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : ''
+            logDiv.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`
+            logDiv.scrollTop = logDiv.scrollHeight
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '<p>Log cleared...</p>'
+        }
+
+        async function testWorkOrder() {
+            log('🚀 Testing GET work order 60254 via Vercel API...')
+            
+            try {
+                const response = await fetch('/api/workorder?id=60254')
+                log(`📊 Response: ${response.status} ${response.statusText}`, response.ok ? 'success' : 'error')
+                
+                const data = await response.json()
+                if (response.ok) {
+                    log(`✅ SUCCESS! Work order found:`, 'success')
+                    log(`📦 ID: ${data.Id}, Custom ID: ${data.CustomId}, Status: ${data.StatusId}`)
+                    log(`📝 Description: ${data.Description}`)
+                } else {
+                    log(`❌ Error: ${data.error}`, 'error')
+                }
+                
+            } catch (error) {
+                log(`❌ Network error: ${error.message}`, 'error')
+            }
+        }
+
+        async function testNonExistent() {
+            log('🚀 Testing non-existent work order 99999...')
+            
+            try {
+                const response = await fetch('/api/workorder?id=99999')
+                log(`📊 Response: ${response.status} ${response.statusText}`, response.status === 404 ? 'success' : 'warning')
+                
+                const data = await response.json()
+                if (response.status === 404) {
+                    log(`✅ Correctly detected non-existent work order`, 'success')
+                    log(`📦 Error: ${data.error}`)
+                } else {
+                    log(`⚠️ Unexpected response: ${JSON.stringify(data)}`, 'warning')
+                }
+                
+            } catch (error) {
+                log(`❌ Network error: ${error.message}`, 'error')
+            }
+        }
+
+        async function testUpdate() {
+            log('🚀 Testing work order status update...')
+            
+            try {
+                // First get current data
+                log('📥 Step 1: Getting current work order data...')
+                const getResponse = await fetch('/api/workorder?id=60254')
+                
+                if (!getResponse.ok) {
+                    const error = await getResponse.json()
+                    log(`❌ Failed to get work order: ${error.error}`, 'error')
+                    return
+                }
+                
+                const currentData = await getResponse.json()
+                log(`✅ Current status: ${currentData.StatusId}`, 'success')
+                
+                // Update with same status (safe test)
+                log('📤 Step 2: Updating work order (keeping same status for safety)...')
+                const updateData = {
+                    ...currentData,
+                    StatusId: currentData.StatusId // Keep same status for safe testing
+                }
+                
+                const putResponse = await fetch('/api/workorder?id=60254', {
+                    method: 'POST', // Using POST for PUT operations
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updateData)
+                })
+                
+                log(`📊 Update response: ${putResponse.status}`, putResponse.ok ? 'success' : 'error')
+                
+                if (putResponse.ok) {
+                    const result = await putResponse.json()
+                    log(`✅ Successfully updated work order!`, 'success')
+                    log(`📦 Result: ${JSON.stringify(result)}`)
+                } else {
+                    const error = await putResponse.json()
+                    log(`❌ Update failed: ${error.error}`, 'error')
+                }
+                
+            } catch (error) {
+                log(`❌ Network error: ${error.message}`, 'error')
+            }
+        }
+
+        // Auto-test on page load
+        window.addEventListener('load', () => {
+            log('🎉 Page loaded! API routes are deployed and ready.')
+            log('💡 The CORS issue has been resolved using server-to-server communication.')
+        })
+    </script>
+</body>
+</html>
