@@ -86,13 +86,39 @@ export default async function handler(req, res) {
       const now = new Date();
       const modifiedDate = `/Date(${now.getTime()})/`;
       
+      // Clean the payload - only include RazorSync fields, remove Supabase-specific fields
       const payload = {
-        ...updateData,
+        // Core RazorSync fields
+        Id: updateData.Id,
+        CustomId: updateData.CustomId,
+        Description: updateData.Description,
+        StartDate: updateData.StartDate,
+        EndDate: updateData.EndDate,
+        StatusId: updateData.StatusId,
+        FieldWorkerId: updateData.FieldWorkerId,
+        LocationId: updateData.LocationId,
+        ActorId: updateData.ActorId,
+        ServiceRequestId: updateData.ServiceRequestId,
+        TaxNameId: updateData.TaxNameId,
+        InvoicingMemo: updateData.InvoicingMemo,
+        IsNotificationsDisable: updateData.IsNotificationsDisable,
+        IdInContext: updateData.IdInContext,
+        
+        // Add modified date fields
         LastChangeDate: modifiedDate,
         ModifiedDate: modifiedDate
       };
 
-      // Remove any fields that shouldn't be sent back
+      // Remove any null/undefined values and Supabase-specific fields
+      Object.keys(payload).forEach(key => {
+        if (payload[key] === null || payload[key] === undefined) {
+          delete payload[key];
+        }
+      });
+
+      // Remove Supabase relationship fields that shouldn't be sent to RazorSync
+      delete payload.rs_status_lookup;
+      delete payload.fieldworkers;
       delete payload.CreatedDate;
       delete payload.CreateDate;
 
@@ -103,6 +129,13 @@ export default async function handler(req, res) {
         'Host': RAZORSYNC_CONFIG.host,
         'ServerName': RAZORSYNC_CONFIG.serverName
       };
+
+      console.log(`🔧 Updating work order ${workOrderId} with cleaned payload:`, {
+        id: payload.Id,
+        statusId: payload.StatusId,
+        fieldCount: Object.keys(payload).length,
+        hasModifiedDate: !!payload.LastChangeDate
+      });
 
       const response = await fetch(url, {
         method: 'PUT',
@@ -115,8 +148,15 @@ export default async function handler(req, res) {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`❌ RazorSync PUT Error: ${response.status} - ${errorText}`);
+        console.error(`❌ Payload that caused error:`, JSON.stringify(payload, null, 2));
         return res.status(response.status).json({ 
-          error: `RazorSync PUT Error: ${response.status} - ${errorText}` 
+          error: `RazorSync PUT Error: ${response.status} - ${errorText}`,
+          debugInfo: {
+            workOrderId,
+            payloadFieldCount: Object.keys(payload).length,
+            statusId: payload.StatusId
+          }
+        });
         });
       }
 
