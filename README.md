@@ -37,11 +37,11 @@ cp .env.example .env.local
 Edit `.env.local` with your credentials:
 
 ```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-VITE_RAZORSYNC_TOKEN=4442a145-bf1b-4cc4-bfd1-026587d5b037
-VITE_RAZORSYNC_HOST=vallus.0.razorsync.com
-VITE_RAZORSYNC_SERVER=vallus
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+VITE_RAZORSYNC_TOKEN=
+VITE_RAZORSYNC_HOST=
+VITE_RAZORSYNC_SERVER=
 ```
 
 ### 4. Run Development Server
