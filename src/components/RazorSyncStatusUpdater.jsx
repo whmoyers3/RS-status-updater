@@ -606,4 +606,7 @@ export default RazorSyncStatusUpdater;                <p>Enter a work order ID a
   );
 };
 
+export default RazorSyncStatusUpdater;  );
+};
+
 export default RazorSyncStatusUpdater;
