@@ -6,39 +6,14 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// Get work orders with status and fieldworker info
+// Get work orders with manual status and fieldworker joins
 export const getWorkOrders = async (filters = {}) => {
   let query = supabase
     .from('rs_work_orders')
-    .select(`
-      rs_id,
-      rs_custom_id,
-      description,
-      rs_start_date,
-      rs_field_worker_id,
-      rs_status_id,
-      rs_create_date,
-      rs_last_change_date,
-      rs_service_request_id,
-      rs_customer_id,
-      notes,
-      rs_status_lookup(
-        status_id,
-        status_description,
-        status_category,
-        is_complete
-      ),
-      fieldworkers(
-        id,
-        full_name
-      )
-    `)
+    .select('*')
     .order('rs_start_date', { ascending: false })
 
   // Apply filters
-  if (filters.incomplete_only) {
-    query = query.eq('rs_status_lookup.is_complete', false)
-  }  
   if (filters.field_worker_id) {
     query = query.eq('rs_field_worker_id', filters.field_worker_id)
   }
@@ -51,42 +26,44 @@ export const getWorkOrders = async (filters = {}) => {
     query = query.range(filters.offset, filters.offset + (filters.limit || 50) - 1)
   }
 
-  const { data, error } = await query
+  const { data: workOrders, error } = await query
 
   if (error) {
     throw new Error(`Failed to fetch work orders: ${error.message}`)
   }
 
-  return data
+  // Manually fetch status and fieldworker data
+  const [statusData, fieldworkerData] = await Promise.all([
+    getStatuses(),
+    getFieldworkers()
+  ])
+
+  // Create lookup maps for better performance
+  const statusMap = new Map(statusData.map(status => [status.status_id, status]))
+  const fieldworkerMap = new Map(fieldworkerData.map(fw => [fw.id, fw]))
+
+  // Combine the data manually
+  const enrichedWorkOrders = workOrders.map(workOrder => ({
+    ...workOrder,
+    rs_status_lookup: statusMap.get(workOrder.rs_status_id) || null,
+    fieldworkers: fieldworkerMap.get(workOrder.rs_field_worker_id) || null
+  }))
+
+  // Apply incomplete filter after enrichment if needed
+  if (filters.incomplete_only) {
+    return enrichedWorkOrders.filter(wo => 
+      wo.rs_status_lookup && !wo.rs_status_lookup.is_complete
+    )
+  }
+
+  return enrichedWorkOrders
 }
 
 // Get work order by ID (RazorSync ID or Custom ID)
 export const getWorkOrderById = async (id) => {
-  const { data, error } = await supabase
+  const { data: workOrder, error } = await supabase
     .from('rs_work_orders')
-    .select(`
-      rs_id,
-      rs_custom_id,
-      description,
-      rs_start_date,
-      rs_field_worker_id,
-      rs_status_id,
-      rs_create_date,
-      rs_last_change_date,
-      rs_service_request_id,
-      rs_customer_id,
-      notes,
-      rs_status_lookup(
-        status_id,
-        status_description,
-        status_category,
-        is_complete
-      ),
-      fieldworkers(
-        id,
-        full_name
-      )
-    `)
+    .select('*')
     .or(`rs_id.eq.${id},rs_custom_id.eq.${id}`)
     .single()
 
@@ -97,8 +74,23 @@ export const getWorkOrderById = async (id) => {
     throw new Error(`Failed to fetch work order: ${error.message}`)
   }
 
-  return data
+  // Manually fetch related data
+  const [statusData, fieldworkerData] = await Promise.all([
+    getStatuses(),
+    getFieldworkers()
+  ])
+
+  const statusMap = new Map(statusData.map(status => [status.status_id, status]))
+  const fieldworkerMap = new Map(fieldworkerData.map(fw => [fw.id, fw]))
+
+  // Enrich the work order with related data
+  return {
+    ...workOrder,
+    rs_status_lookup: statusMap.get(workOrder.rs_status_id) || null,
+    fieldworkers: fieldworkerMap.get(workOrder.rs_field_worker_id) || null
+  }
 }
+
 // Get all status options
 export const getStatuses = async () => {
   const { data, error } = await supabase
@@ -135,15 +127,11 @@ export const getIncompleteWorkOrders = async (filters = {}) => {
   })
 }
 
-// Count total work orders
+// Count total work orders with manual filtering
 export const getWorkOrdersCount = async (filters = {}) => {
   let query = supabase
     .from('rs_work_orders')
     .select('rs_id', { count: 'exact', head: true })
-
-  if (filters.incomplete_only) {
-    query = query.eq('rs_status_lookup.is_complete', false)
-  }
 
   if (filters.field_worker_id) {
     query = query.eq('rs_field_worker_id', filters.field_worker_id)
@@ -153,6 +141,13 @@ export const getWorkOrdersCount = async (filters = {}) => {
 
   if (error) {
     throw new Error(`Failed to count work orders: ${error.message}`)
+  }
+
+  // If incomplete_only filter is applied, we need to fetch and filter manually
+  if (filters.incomplete_only) {
+    // For count with incomplete filter, we need to fetch the data and filter
+    const workOrders = await getWorkOrders(filters)
+    return workOrders.length
   }
 
   return count
