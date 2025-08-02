@@ -5,26 +5,26 @@ const RAZORSYNC_CONFIG = {
   serverName: import.meta.env.VITE_RAZORSYNC_SERVER || 'vallus',
   baseUrl: `https://${import.meta.env.VITE_RAZORSYNC_SERVER || 'vallus'}.0.razorsync.com/ApiService.svc`,
   // Use Vercel API routes to bypass CORS
-  apiBaseUrl: '/api/razorsync'
+  apiBaseUrl: '/api'
 }
 
 // Base API call function using Vercel API routes
-const makeRazorSyncRequest = async (endpoint, method = 'GET', body = null) => {
+const makeRazorSyncRequest = async (workOrderId, method = 'GET', body = null) => {
   // Use Vercel API routes instead of direct RazorSync API calls
-  const url = `${RAZORSYNC_CONFIG.apiBaseUrl}${endpoint}`
+  const url = `${RAZORSYNC_CONFIG.apiBaseUrl}/${workOrderId}`
   
   const headers = {
     'Content-Type': 'application/json'
   }
 
   const config = {
-    method,
+    method: method === 'PUT' ? 'POST' : method, // Use POST for updates
     headers,
-    ...(body && method !== 'GET' && { body: JSON.stringify(body) })
+    ...(body && { body: JSON.stringify(body) })
   }
 
   try {
-    console.log(`🌐 Vercel API ${method} ${endpoint}:`, body ? 'with data' : 'no data')
+    console.log(`🌐 Vercel API ${method} ${url}:`, body ? 'with data' : 'no data')
     const response = await fetch(url, config)
     
     if (!response.ok) {
@@ -34,7 +34,7 @@ const makeRazorSyncRequest = async (endpoint, method = 'GET', body = null) => {
     }
     
     const result = await response.json()
-    console.log(`✅ Vercel API ${method} ${endpoint} success:`, result ? 'data received' : 'no data')
+    console.log(`✅ Vercel API ${method} success:`, result ? 'data received' : 'no data')
     return result
     
   } catch (error) {
@@ -46,7 +46,7 @@ const makeRazorSyncRequest = async (endpoint, method = 'GET', body = null) => {
 // Get work order details by RazorSync ID
 export const getWorkOrder = async (workOrderId) => {
   try {
-    const result = await makeRazorSyncRequest(`/workorder/${workOrderId}`)
+    const result = await makeRazorSyncRequest(workOrderId, 'GET')
     return result
   } catch (error) {
     console.error(`Failed to get work order ${workOrderId}:`, error.message)
@@ -113,7 +113,7 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
       fieldsCount: Object.keys(updateData).length
     })
     
-    const updateResult = await makeRazorSyncRequest(`/workorder/${razorSyncId}`, 'PUT', updateData)
+    const updateResult = await makeRazorSyncRequest(razorSyncId, 'PUT', updateData)
     
     console.log(`✅ Step 2 Success: Updated work order ${razorSyncId} status to ${statusId}`)
     
@@ -141,9 +141,9 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
   }
 }
 
-// Delete work order
+// Delete work order (not implemented in current API route)
 export const deleteWorkOrder = async (workOrderId) => {
-  return makeRazorSyncRequest(`/workorder/${workOrderId}`, 'DELETE')
+  throw new Error('Delete functionality not yet implemented in API route')
 }
 
 // Batch update work orders (sequential to avoid rate limiting)
@@ -178,22 +178,17 @@ export const batchUpdateWorkOrders = async (workOrderUpdates, onProgress = null)
   return results
 }
 
-// Get available statuses (if RazorSync provides this endpoint)
+// Get available statuses (fallback to predefined)
 export const getAvailableStatuses = async () => {
-  try {
-    return makeRazorSyncRequest('/settings/statuses')
-  } catch (error) {
-    // Fallback to predefined statuses if endpoint doesn't exist
-    console.warn('Could not fetch statuses from RazorSync, using fallback')
-    return []
-  }
+  console.warn('Status fetching not yet implemented in API route, using fallback')
+  return []
 }
 
-// Test API connection
+// Test API connection (basic test)
 export const testConnection = async () => {
   try {
-    // Try a simple API call to test connectivity
-    await makeRazorSyncRequest('/settings/companyinfo')
+    // Try to get a known work order to test connectivity
+    await getWorkOrder('60254')
     return { success: true, message: 'Connection successful' }
   } catch (error) {
     return { 

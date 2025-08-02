@@ -1,0 +1,15 @@
+{
+  "functions": {
+    "api/razorsync/workorder/[id].js": {
+      "maxDuration": 30
+    },
+    "api/razorsync/settings/[endpoint].js": {
+      "maxDuration": 30
+    }
+  },
+  "env": {
+    "VITE_RAZORSYNC_TOKEN": "@razorsync_token",
+    "VITE_RAZORSYNC_HOST": "@razorsync_host", 
+    "VITE_RAZORSYNC_SERVER": "@razorsync_server"
+  }
+}
