@@ -129,7 +129,7 @@ export default async function handler(req, res) {
         // Trigger n8n webhook to update Supabase data
         try {
           console.log(`🔄 Triggering n8n workflow to update Supabase...`);
-          const webhookUrl = 'http://24.158.242.116:5678/webhook-test/672008ff-0465-4977-bbf7-426371c06bc6';
+          const webhookUrl = 'http://24.158.242.116:5678/webhook/672008ff-0465-4977-bbf7-426371c06bc6';
           const webhookResponse = await fetch(webhookUrl, {
             method: 'GET',
             headers: {
@@ -159,7 +159,7 @@ export default async function handler(req, res) {
       // Trigger n8n webhook for non-JSON responses too
       try {
         console.log(`🔄 Triggering n8n workflow to update Supabase...`);
-        const webhookUrl = 'http://24.158.242.116:5678/webhook-test/672008ff-0465-4977-bbf7-426371c06bc6';
+        const webhookUrl = 'http://24.158.242.116:5678/webhook/672008ff-0465-4977-bbf7-426371c06bc6';
         const webhookResponse = await fetch(webhookUrl, {
           method: 'GET',
           headers: {
