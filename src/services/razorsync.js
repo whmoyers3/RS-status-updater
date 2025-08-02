@@ -35,7 +35,7 @@ const makeRazorSyncRequest = async (endpoint, method = 'GET', body = null) => {
       const errorText = await response.text()
       throw new Error(`RazorSync API Error: ${response.status} - ${errorText}`)
     }
-    // Some endpoints might return empty responses for successful operations
+    
     const contentType = response.headers.get('content-type')
     if (contentType && contentType.includes('application/json')) {
       return await response.json()
@@ -87,7 +87,7 @@ export const deleteWorkOrder = async (workOrderId) => {
   return makeRazorSyncRequest(`/WorkOrder/${workOrderId}`, 'DELETE')
 }
 
-// Batch update work orders (sequential to avoid rate limiting)
+// Batch update work orders
 export const batchUpdateWorkOrders = async (workOrderUpdates, onProgress = null) => {
   const results = []
   const total = workOrderUpdates.length
@@ -103,7 +103,6 @@ export const batchUpdateWorkOrders = async (workOrderUpdates, onProgress = null)
         onProgress(i + 1, total)
       }
       
-      // Add small delay to avoid overwhelming the API
       if (i < workOrderUpdates.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 500))
       }
@@ -119,21 +118,9 @@ export const batchUpdateWorkOrders = async (workOrderUpdates, onProgress = null)
   return results
 }
 
-// Get available statuses (if RazorSync provides this endpoint)
-export const getAvailableStatuses = async () => {
-  try {
-    return makeRazorSyncRequest('/Settings/Statuses')
-  } catch (error) {
-    // Fallback to predefined statuses if endpoint doesn't exist
-    console.warn('Could not fetch statuses from RazorSync, using fallback')
-    return []
-  }
-}
-
 // Test API connection
 export const testConnection = async () => {
   try {
-    // Try a simple API call to test connectivity
     await makeRazorSyncRequest('/Settings/CompanyInfo')
     return { success: true, message: 'Connection successful' }
   } catch (error) {
