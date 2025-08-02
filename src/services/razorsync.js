@@ -30,7 +30,17 @@ const makeRazorSyncRequest = async (endpoint, method = 'GET', body = null) => {
 
   try {
     console.log(`🌐 RazorSync ${method} ${endpoint}:`, body ? 'with data' : 'no data')
+    console.log(`📡 Full URL: ${url}`)
+    console.log(`📋 Headers:`, headers)
+    
     const response = await fetch(url, config)
+    
+    console.log(`📊 Response received:`)
+    console.log(`   - Status: ${response.status}`)
+    console.log(`   - OK: ${response.ok}`)
+    console.log(`   - Status Text: ${response.statusText}`)
+    console.log(`   - Content-Type: ${response.headers.get('content-type')}`)
+    console.log(`   - Content-Length: ${response.headers.get('content-length')}`)
     
     if (!response.ok) {
       const errorText = await response.text()
@@ -50,6 +60,7 @@ const makeRazorSyncRequest = async (endpoint, method = 'GET', body = null) => {
     if (contentType && contentType.includes('application/json')) {
       const result = await response.json()
       console.log(`✅ RazorSync ${method} ${endpoint} success:`, result ? 'data received' : 'no data')
+      console.log(`📦 Actual data:`, result)
       return result
     }
     
