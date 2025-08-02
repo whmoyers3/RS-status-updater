@@ -120,6 +120,12 @@
                 if (putResponse.ok) {
                     const result = await putResponse.json()
                     log(`✅ Successfully updated work order!`, 'success')
+                    if (result.webhookTriggered) {
+                        log(`🔄 n8n webhook triggered to sync Supabase data`, 'success')
+                    }
+                    if (result.message) {
+                        log(`💬 ${result.message}`, 'warning')
+                    }
                     log(`📦 Result: ${JSON.stringify(result)}`)
                 } else {
                     const error = await putResponse.json()

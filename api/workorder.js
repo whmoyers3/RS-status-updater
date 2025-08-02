@@ -125,11 +125,63 @@ export default async function handler(req, res) {
       if (contentType && contentType.includes('application/json')) {
         const result = await response.json();
         console.log(`✅ Successfully updated work order ${workOrderId}`);
-        return res.status(200).json(result);
+        
+        // Trigger n8n webhook to update Supabase data
+        try {
+          console.log(`🔄 Triggering n8n workflow to update Supabase...`);
+          const webhookUrl = 'http://24.158.242.116:5678/webhook-test/672008ff-0465-4977-bbf7-426371c06bc6';
+          const webhookResponse = await fetch(webhookUrl, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (webhookResponse.ok) {
+            console.log(`✅ n8n webhook triggered successfully`);
+          } else {
+            console.warn(`⚠️ n8n webhook returned ${webhookResponse.status}`);
+          }
+        } catch (webhookError) {
+          console.error(`❌ Failed to trigger n8n webhook:`, webhookError);
+          // Don't fail the main operation if webhook fails
+        }
+        
+        return res.status(200).json({
+          ...result,
+          message: 'Work order updated successfully. Please refresh the list in 5 seconds to see updated data.',
+          webhookTriggered: true
+        });
       }
 
       console.log(`✅ Work order ${workOrderId} updated (non-JSON response)`);
-      return res.status(200).json({ success: true });
+      
+      // Trigger n8n webhook for non-JSON responses too
+      try {
+        console.log(`🔄 Triggering n8n workflow to update Supabase...`);
+        const webhookUrl = 'http://24.158.242.116:5678/webhook-test/672008ff-0465-4977-bbf7-426371c06bc6';
+        const webhookResponse = await fetch(webhookUrl, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (webhookResponse.ok) {
+          console.log(`✅ n8n webhook triggered successfully`);
+        } else {
+          console.warn(`⚠️ n8n webhook returned ${webhookResponse.status}`);
+        }
+      } catch (webhookError) {
+        console.error(`❌ Failed to trigger n8n webhook:`, webhookError);
+        // Don't fail the main operation if webhook fails
+      }
+      
+      return res.status(200).json({ 
+        success: true,
+        message: 'Work order updated successfully. Please refresh the list in 5 seconds to see updated data.',
+        webhookTriggered: true
+      });
 
     } else {
       res.setHeader('Allow', ['GET', 'POST', 'OPTIONS']);

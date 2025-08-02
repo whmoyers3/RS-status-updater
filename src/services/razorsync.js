@@ -117,13 +117,19 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
     
     console.log(`✅ Step 2 Success: Updated work order ${razorSyncId} status to ${statusId}`)
     
+    // Check if webhook was triggered for Supabase sync
+    if (updateResult && updateResult.webhookTriggered) {
+      console.log(`🔄 n8n webhook triggered to sync Supabase data`)
+    }
+    
     return {
       success: true,
       workOrderId: razorSyncId,
       customId: currentWorkOrder.CustomId,
       oldStatus: currentWorkOrder.StatusId,
       newStatus: parseInt(statusId),
-      updateResult
+      updateResult,
+      message: updateResult?.message || 'Work order updated successfully'
     }
     
   } catch (error) {

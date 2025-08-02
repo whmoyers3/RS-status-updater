@@ -90,11 +90,16 @@ const RazorSyncStatusUpdater = () => {
       );
       
       await Promise.all(updatePromises);
-      await refresh();
       
       setSelectedOrders([]);
       setSelectedStatus('');
-      showNotification(`Successfully updated ${selectedOrders.length} work order(s)`);
+      showNotification(`Successfully updated ${selectedOrders.length} work order(s). Refreshing data in 5 seconds...`);
+      
+      // Auto-refresh after 5 seconds to show updated data
+      setTimeout(() => {
+        refresh();
+      }, 5000);
+      
     } catch (error) {
       showNotification(`Failed to update work orders: ${error.message}`, 'error');
       console.error('Batch update error:', error);
@@ -135,10 +140,19 @@ const RazorSyncStatusUpdater = () => {
     try {
       await updateWorkOrderStatus(searchResult.rs_id, newStatusId);
       
-      const updated = await getWorkOrderById(searchResult.rs_id);
-      setSearchResult(updated);
+      showNotification('Work order status updated successfully. Refreshing data in 5 seconds...');
       
-      showNotification('Work order status updated successfully');
+      // Auto-refresh the search result after 5 seconds
+      setTimeout(async () => {
+        try {
+          const updated = await getWorkOrderById(searchResult.rs_id);
+          setSearchResult(updated);
+          showNotification('Data refreshed with latest information', 'success');
+        } catch (error) {
+          console.error('Failed to refresh search result:', error);
+        }
+      }, 5000);
+      
     } catch (error) {
       showNotification(`Failed to update work order status: ${error.message}`, 'error');
       console.error('Single update error:', error);
