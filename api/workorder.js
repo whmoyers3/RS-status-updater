@@ -95,15 +95,15 @@ export default async function handler(req, res) {
         StartDate: updateData.StartDate,
         EndDate: updateData.EndDate,
         StatusId: parseInt(updateData.StatusId), // Ensure numeric
-        FieldWorkerId: updateData.FieldWorkerId ? parseInt(updateData.FieldWorkerId) : updateData.FieldWorkerId,
-        ActorId: updateData.ActorId ? parseInt(updateData.ActorId) : updateData.ActorId,
-        IdInContext: updateData.IdInContext ? parseInt(updateData.IdInContext) : updateData.IdInContext,
+        FieldWorkerId: updateData.FieldWorkerId !== null ? parseInt(updateData.FieldWorkerId) : updateData.FieldWorkerId,
+        ActorId: updateData.ActorId !== null ? parseInt(updateData.ActorId) : updateData.ActorId,
+        IdInContext: updateData.IdInContext !== null ? parseInt(updateData.IdInContext) : updateData.IdInContext, // Handle 0 values
         IsNotificationsDisable: Boolean(updateData.IsNotificationsDisable),
         
-        // Optional fields - only include if they have values
-        ...(updateData.LocationId && { LocationId: parseInt(updateData.LocationId) }),
-        ...(updateData.ServiceRequestId && { ServiceRequestId: parseInt(updateData.ServiceRequestId) }),
-        ...(updateData.TaxNameId && { TaxNameId: parseInt(updateData.TaxNameId) }),
+        // Optional fields - only include if they have values (but allow 0)
+        ...(updateData.LocationId !== null && updateData.LocationId !== undefined && { LocationId: parseInt(updateData.LocationId) }),
+        ...(updateData.ServiceRequestId !== null && updateData.ServiceRequestId !== undefined && { ServiceRequestId: parseInt(updateData.ServiceRequestId) }),
+        ...(updateData.TaxNameId !== null && updateData.TaxNameId !== undefined && { TaxNameId: parseInt(updateData.TaxNameId) }),
         ...(updateData.InvoicingMemo && { InvoicingMemo: updateData.InvoicingMemo }),
         
         // Add modified date fields
@@ -142,8 +142,20 @@ export default async function handler(req, res) {
         statusIdType: typeof payload.StatusId,
         fieldCount: Object.keys(payload).length,
         hasModifiedDate: !!payload.LastChangeDate,
+        hasLocationId: 'LocationId' in payload,
+        hasServiceRequestId: 'ServiceRequestId' in payload,
+        idInContext: payload.IdInContext,
         cleanedFields: Object.keys(payload).join(', ')
       });
+
+      // Additional validation for potential issues with older records
+      if (payload.StartDate && payload.EndDate) {
+        const startTime = parseInt(payload.StartDate.match(/\d+/)?.[0] || '0');
+        const endTime = parseInt(payload.EndDate.match(/\d+/)?.[0] || '0');
+        if (startTime > endTime) {
+          console.warn(`⚠️ Warning: StartDate (${startTime}) is after EndDate (${endTime}) for work order ${workOrderId}`);
+        }
+      }
 
       const url = `${RAZORSYNC_CONFIG.baseUrl}/WorkOrder`;
       const headers = {
