@@ -1,4 +1,7 @@
 // services/razorsync.js - Updated to use Vercel API routes for server-to-server communication
+// Import Supabase functions for field worker validation
+import { getFieldworkers } from './supabase.js'
+
 const RAZORSYNC_CONFIG = {
   token: import.meta.env.VITE_RAZORSYNC_TOKEN,
   host: import.meta.env.VITE_RAZORSYNC_HOST || 'vallus.0.razorsync.com',
