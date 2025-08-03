@@ -88,40 +88,44 @@ export default async function handler(req, res) {
       
       // Clean the payload - only include RazorSync fields, remove Supabase-specific fields
       const payload = {
-        // Core RazorSync fields
-        Id: updateData.Id,
+        // Core RazorSync fields - only include non-null values with proper types
+        Id: parseInt(updateData.Id),
         CustomId: updateData.CustomId,
         Description: updateData.Description,
         StartDate: updateData.StartDate,
         EndDate: updateData.EndDate,
         StatusId: parseInt(updateData.StatusId), // Ensure numeric
-        FieldWorkerId: updateData.FieldWorkerId,
-        LocationId: updateData.LocationId,
-        ActorId: updateData.ActorId,
-        ServiceRequestId: updateData.ServiceRequestId,
-        TaxNameId: updateData.TaxNameId,
-        InvoicingMemo: updateData.InvoicingMemo,
-        IsNotificationsDisable: updateData.IsNotificationsDisable,
-        IdInContext: updateData.IdInContext,
+        FieldWorkerId: updateData.FieldWorkerId ? parseInt(updateData.FieldWorkerId) : updateData.FieldWorkerId,
+        ActorId: updateData.ActorId ? parseInt(updateData.ActorId) : updateData.ActorId,
+        IdInContext: updateData.IdInContext ? parseInt(updateData.IdInContext) : updateData.IdInContext,
+        IsNotificationsDisable: Boolean(updateData.IsNotificationsDisable),
+        
+        // Optional fields - only include if they have values
+        ...(updateData.LocationId && { LocationId: parseInt(updateData.LocationId) }),
+        ...(updateData.ServiceRequestId && { ServiceRequestId: parseInt(updateData.ServiceRequestId) }),
+        ...(updateData.TaxNameId && { TaxNameId: parseInt(updateData.TaxNameId) }),
+        ...(updateData.InvoicingMemo && { InvoicingMemo: updateData.InvoicingMemo }),
         
         // Add modified date fields
         LastChangeDate: modifiedDate,
         ModifiedDate: modifiedDate
       };
 
-      // Validate that StatusId is numeric
-      if (isNaN(payload.StatusId)) {
-        console.error(`❌ Invalid StatusId: ${updateData.StatusId} - must be numeric`);
+      // Validate that required numeric fields are valid
+      if (isNaN(payload.Id) || isNaN(payload.StatusId)) {
+        console.error(`❌ Invalid required numeric fields - Id: ${payload.Id}, StatusId: ${payload.StatusId}`);
         return res.status(400).json({ 
-          error: `Invalid StatusId: ${updateData.StatusId} - must be numeric`,
+          error: `Invalid required fields - Id or StatusId must be numeric`,
+          receivedId: updateData.Id,
           receivedStatusId: updateData.StatusId,
+          idType: typeof updateData.Id,
           statusIdType: typeof updateData.StatusId
         });
       }
 
-      // Remove any null/undefined values and Supabase-specific fields
+      // Remove any remaining null/undefined values and Supabase-specific fields
       Object.keys(payload).forEach(key => {
-        if (payload[key] === null || payload[key] === undefined) {
+        if (payload[key] === null || payload[key] === undefined || payload[key] === '') {
           delete payload[key];
         }
       });
@@ -136,10 +140,9 @@ export default async function handler(req, res) {
         id: payload.Id,
         statusId: payload.StatusId,
         statusIdType: typeof payload.StatusId,
-        originalStatusId: updateData.StatusId,
-        originalStatusIdType: typeof updateData.StatusId,
         fieldCount: Object.keys(payload).length,
-        hasModifiedDate: !!payload.LastChangeDate
+        hasModifiedDate: !!payload.LastChangeDate,
+        cleanedFields: Object.keys(payload).join(', ')
       });
 
       const url = `${RAZORSYNC_CONFIG.baseUrl}/WorkOrder`;
