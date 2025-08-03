@@ -60,7 +60,7 @@ export const getWorkOrder = async (workOrderId) => {
     throw new Error(`Failed to fetch work order ${workOrderId}: ${error.message}`)
   }
 }
-// IMPROVED: 2-step API update using RazorSync ID (recommended approach)
+// IMPROVED: 2-step API update using RazorSync ID with deactivated field worker handling
 export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
   console.log(`🔄 Starting 2-step update for RazorSync ID ${razorSyncId} to status ${statusId}`)
   
@@ -96,6 +96,7 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
       customId: currentWorkOrder.CustomId,
       currentStatus: currentWorkOrder.StatusId,
       currentStatusType: typeof currentWorkOrder.StatusId,
+      currentFieldWorker: currentWorkOrder.FieldWorkerId,
       description: currentWorkOrder.Description?.substring(0, 50) + '...'
     })
     
@@ -104,15 +105,46 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
       throw new Error(`API returned wrong work order: expected ${razorSyncId}, got ${currentWorkOrder.Id}`)
     }
     
+    // STEP 1.5: Check for deactivated field worker and handle auto-reassignment
+    console.log(`🔍 Checking field worker status for ID ${currentWorkOrder.FieldWorkerId}...`)
+    
+    // Get list of active fieldworkers from Supabase
+    const fieldworkers = await getFieldworkers()
+    const activeFieldWorkerIds = fieldworkers.map(fw => fw.id)
+    const isFieldWorkerActive = activeFieldWorkerIds.includes(currentWorkOrder.FieldWorkerId)
+    
+    let updateData = { ...currentWorkOrder }
+    
+    if (!isFieldWorkerActive && currentWorkOrder.FieldWorkerId !== 1) {
+      console.log(`⚠️ Field worker ${currentWorkOrder.FieldWorkerId} is deactivated. Auto-reassigning to Field Worker 1...`)
+      
+      // Auto-reassign to Field Worker 1 (active user)
+      updateData.FieldWorkerId = 1
+      
+      // Append note to description about the field worker change
+      const originalDescription = currentWorkOrder.Description || ''
+      const fieldWorkerNote = ` (changed from FW ${currentWorkOrder.FieldWorkerId})`
+      
+      // Only append if not already noted to avoid duplicate notes
+      if (!originalDescription.includes(`(changed from FW ${currentWorkOrder.FieldWorkerId})`)) {
+        updateData.Description = originalDescription + fieldWorkerNote
+      }
+      
+      console.log(`✅ Auto-reassignment prepared:`, {
+        originalFieldWorker: currentWorkOrder.FieldWorkerId,
+        newFieldWorker: updateData.FieldWorkerId,
+        descriptionUpdated: updateData.Description !== originalDescription,
+        newDescription: updateData.Description?.substring(0, 100) + '...'
+      })
+    } else {
+      console.log(`✅ Field worker ${currentWorkOrder.FieldWorkerId} is active. No reassignment needed.`)
+    }
+    
     // STEP 2: API PUT - Update status while preserving ALL other fields exactly as returned
     console.log(`📤 Step 2: Updating work order ${razorSyncId} status from ${currentWorkOrder.StatusId} to ${numericStatusId}...`)
     
-    const updateData = {
-      // Preserve ALL fields exactly as returned by the API
-      ...currentWorkOrder,
-      // Only change the status to the numeric value
-      StatusId: numericStatusId
-    }
+    // Only change the status to the numeric value (and potentially field worker + description if auto-reassigned)
+    updateData.StatusId = numericStatusId
     
     console.log(`🔧 Update payload prepared:`, {
       id: updateData.Id,
@@ -121,6 +153,10 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
       oldStatusType: typeof currentWorkOrder.StatusId,
       newStatus: updateData.StatusId,
       newStatusType: typeof updateData.StatusId,
+      oldFieldWorker: currentWorkOrder.FieldWorkerId,
+      newFieldWorker: updateData.FieldWorkerId,
+      fieldWorkerChanged: updateData.FieldWorkerId !== currentWorkOrder.FieldWorkerId,
+      descriptionChanged: updateData.Description !== currentWorkOrder.Description,
       fieldsCount: Object.keys(updateData).length
     })
     
@@ -139,6 +175,9 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
       customId: currentWorkOrder.CustomId,
       oldStatus: currentWorkOrder.StatusId,
       newStatus: numericStatusId,
+      oldFieldWorker: currentWorkOrder.FieldWorkerId,
+      newFieldWorker: updateData.FieldWorkerId,
+      fieldWorkerReassigned: updateData.FieldWorkerId !== currentWorkOrder.FieldWorkerId,
       updateResult,
       message: updateResult?.message || 'Work order updated successfully'
     }
