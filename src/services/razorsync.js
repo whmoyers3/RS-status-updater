@@ -1,4 +1,4 @@
-// services/razorsync.js - Updated to use Vercel API routes for server-to-server communication
+// services/razorsync.js - FIXED VERSION
 // Import Supabase functions for field worker validation
 import { getFieldworkers } from './supabase.js'
 
@@ -12,9 +12,9 @@ const RAZORSYNC_CONFIG = {
 }
 
 // Base API call function using Vercel API routes
-const makeRazorSyncRequest = async (workOrderId, method = 'GET', body = null) => {
+const makeRazorSyncRequest = async (workOrderId, method = 'GET', body = null, skipWebhook = false) => {
   // Use simple Vercel API routes
-  const url = `/api/workorder?id=${workOrderId}`
+  const url = `/api/workorder?id=${workOrderId}${skipWebhook ? '&skipWebhook=true' : ''}`
   
   const headers = {
     'Content-Type': 'application/json'
@@ -63,9 +63,10 @@ export const getWorkOrder = async (workOrderId) => {
     throw new Error(`Failed to fetch work order ${workOrderId}: ${error.message}`)
   }
 }
-// IMPROVED: 2-step API update using RazorSync ID with deactivated field worker handling
-export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
-  console.log(`🔄 Starting 2-step update for RazorSync ID ${razorSyncId} to status ${statusId}`)
+
+// FIXED: Single work order update with proper field worker validation
+export const updateWorkOrderStatus = async (razorSyncId, statusId, updaterInfo = null, skipWebhook = false) => {
+  console.log(`🔄 Starting update for RazorSync ID ${razorSyncId} to status ${statusId}${skipWebhook ? ' (skipping webhook)' : ''}`)
   
   // Ensure statusId is numeric
   const numericStatusId = parseInt(statusId)
@@ -98,8 +99,8 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
       id: currentWorkOrder.Id,
       customId: currentWorkOrder.CustomId,
       currentStatus: currentWorkOrder.StatusId,
-      currentStatusType: typeof currentWorkOrder.StatusId,
       currentFieldWorker: currentWorkOrder.FieldWorkerId,
+      fieldWorkerType: typeof currentWorkOrder.FieldWorkerId,
       description: currentWorkOrder.Description?.substring(0, 50) + '...'
     })
     
@@ -108,69 +109,88 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
       throw new Error(`API returned wrong work order: expected ${razorSyncId}, got ${currentWorkOrder.Id}`)
     }
     
-    // STEP 1.5: Check for deactivated field worker and handle auto-reassignment
+    // STEP 1.5: FIXED Field Worker Validation - Only change if unassigned or deactivated
     console.log(`🔍 Checking field worker status for ID ${currentWorkOrder.FieldWorkerId}...`)
     
     // Get list of active fieldworkers from Supabase
     const fieldworkers = await getFieldworkers()
     const activeFieldWorkerIds = fieldworkers.map(fw => fw.id)
-    const isFieldWorkerActive = activeFieldWorkerIds.includes(currentWorkOrder.FieldWorkerId)
     
     let updateData = { ...currentWorkOrder }
+    let fieldWorkerChanged = false
     
-    if (!isFieldWorkerActive && currentWorkOrder.FieldWorkerId !== 1) {
-      console.log(`⚠️ Field worker ${currentWorkOrder.FieldWorkerId} is deactivated. Auto-reassigning to Field Worker 1...`)
+    // FIXED LOGIC: Only reassign if field worker is null, undefined, 0, or not in active list
+    const currentFWId = currentWorkOrder.FieldWorkerId
+    const isUnassigned = !currentFWId || currentFWId === 0 || currentFWId === null || currentFWId === undefined
+    const isDeactivated = currentFWId && !activeFieldWorkerIds.includes(currentFWId)
+    
+    console.log(`🔍 Field Worker Analysis:`, {
+      currentFWId,
+      isUnassigned,
+      isDeactivated,
+      activeFieldWorkerIds: activeFieldWorkerIds.slice(0, 5), // Show first 5 for debugging
+      shouldReassign: isUnassigned || isDeactivated
+    })
+    
+    if (isUnassigned || isDeactivated) {
+      console.log(`⚠️ Field worker reassignment needed: ${isUnassigned ? 'Unassigned' : 'Deactivated'} (${currentFWId}). Auto-reassigning to Field Worker 1...`)
       
       // Auto-reassign to Field Worker 1 (active user)
       updateData.FieldWorkerId = 1
+      fieldWorkerChanged = true
       
-      // Append note to description about the field worker change
-      const originalDescription = currentWorkOrder.Description || ''
-      const fieldWorkerNote = ` (changed from FW ${currentWorkOrder.FieldWorkerId})`
-      
-      // Only append if not already noted to avoid duplicate notes
-      if (!originalDescription.includes(`(changed from FW ${currentWorkOrder.FieldWorkerId})`)) {
-        updateData.Description = originalDescription + fieldWorkerNote
+      // Append note to description about the field worker change if deactivated
+      if (isDeactivated) {
+        const originalDescription = currentWorkOrder.Description || ''
+        const fieldWorkerNote = ` (reassigned from deactivated FW ${currentFWId})`
+        
+        // Only append if not already noted to avoid duplicate notes
+        if (!originalDescription.includes(`(reassigned from deactivated FW ${currentFWId})`)) {
+          updateData.Description = originalDescription + fieldWorkerNote
+        }
       }
       
-      console.log(`✅ Auto-reassignment prepared:`, {
-        originalFieldWorker: currentWorkOrder.FieldWorkerId,
+      console.log(`✅ Field worker reassignment prepared:`, {
+        originalFieldWorker: currentFWId,
         newFieldWorker: updateData.FieldWorkerId,
-        descriptionUpdated: updateData.Description !== originalDescription,
-        newDescription: updateData.Description?.substring(0, 100) + '...'
+        reason: isUnassigned ? 'unassigned' : 'deactivated',
+        descriptionUpdated: updateData.Description !== currentWorkOrder.Description
       })
     } else {
-      console.log(`✅ Field worker ${currentWorkOrder.FieldWorkerId} is active. No reassignment needed.`)
+      console.log(`✅ Field worker ${currentFWId} is active and assigned. No reassignment needed.`)
     }
     
     // STEP 2: API PUT - Update status while preserving ALL other fields exactly as returned
     console.log(`📤 Step 2: Updating work order ${razorSyncId} status from ${currentWorkOrder.StatusId} to ${numericStatusId}...`)
     
-    // Only change the status to the numeric value (and potentially field worker + description if auto-reassigned)
+    // Only change the status to the numeric value (and potentially field worker + description if reassigned)
     updateData.StatusId = numericStatusId
+    
+    // Add updater information if provided
+    if (updaterInfo) {
+      // Add updater note to description
+      const updaterNote = ` (updated by ${updaterInfo.name || updaterInfo.id} on ${new Date().toLocaleDateString()})`
+      if (!updateData.Description?.includes(updaterNote)) {
+        updateData.Description = (updateData.Description || '') + updaterNote
+      }
+    }
     
     console.log(`🔧 Update payload prepared:`, {
       id: updateData.Id,
       customId: updateData.CustomId,
       oldStatus: currentWorkOrder.StatusId,
-      oldStatusType: typeof currentWorkOrder.StatusId,
       newStatus: updateData.StatusId,
-      newStatusType: typeof updateData.StatusId,
       oldFieldWorker: currentWorkOrder.FieldWorkerId,
       newFieldWorker: updateData.FieldWorkerId,
-      fieldWorkerChanged: updateData.FieldWorkerId !== currentWorkOrder.FieldWorkerId,
+      fieldWorkerChanged,
       descriptionChanged: updateData.Description !== currentWorkOrder.Description,
-      fieldsCount: Object.keys(updateData).length
+      fieldsCount: Object.keys(updateData).length,
+      skipWebhook
     })
     
-    const updateResult = await makeRazorSyncRequest(razorSyncId, 'PUT', updateData)
+    const updateResult = await makeRazorSyncRequest(razorSyncId, 'PUT', updateData, skipWebhook)
     
     console.log(`✅ Step 2 Success: Updated work order ${razorSyncId} status to ${numericStatusId}`)
-    
-    // Check if webhook was triggered for Supabase sync
-    if (updateResult && updateResult.webhookTriggered) {
-      console.log(`🔄 n8n webhook triggered to sync Supabase data`)
-    }
     
     return {
       success: true,
@@ -180,13 +200,14 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId) => {
       newStatus: numericStatusId,
       oldFieldWorker: currentWorkOrder.FieldWorkerId,
       newFieldWorker: updateData.FieldWorkerId,
-      fieldWorkerReassigned: updateData.FieldWorkerId !== currentWorkOrder.FieldWorkerId,
+      fieldWorkerReassigned: fieldWorkerChanged,
       updateResult,
+      webhookSkipped: skipWebhook,
       message: updateResult?.message || 'Work order updated successfully'
     }
     
   } catch (error) {
-    console.error(`❌ 2-step update failed for work order ${razorSyncId}:`, error)
+    console.error(`❌ Update failed for work order ${razorSyncId}:`, error)
     
     // Enhanced error reporting
     const enhancedError = new Error(
@@ -205,27 +226,43 @@ export const deleteWorkOrder = async (workOrderId) => {
   throw new Error('Delete functionality not yet implemented in API route')
 }
 
-// Batch update work orders (sequential to avoid rate limiting)
-export const batchUpdateWorkOrders = async (workOrderUpdates, onProgress = null) => {
+// FIXED: Batch update with configurable timing and single webhook at end
+export const batchUpdateWorkOrders = async (workOrderUpdates, options = {}) => {
+  const {
+    onProgress = null,
+    delayBetweenRequests = 1000, // Default 1 second between requests
+    updaterInfo = null
+  } = options
+  
   const results = []
   const total = workOrderUpdates.length
   
+  console.log(`🚀 Starting batch update of ${total} work orders with ${delayBetweenRequests}ms delay between requests`)
+  
+  // Process all updates with skipWebhook = true (except the last one)
   for (let i = 0; i < workOrderUpdates.length; i++) {
     const { workOrderId, statusId } = workOrderUpdates[i]
+    const isLastUpdate = i === workOrderUpdates.length - 1
     
     try {
-      await updateWorkOrderStatus(workOrderId, statusId)
+      console.log(`📝 Processing ${i + 1}/${total}: Work Order ${workOrderId}`)
+      
+      // Skip webhook for all but the last update
+      await updateWorkOrderStatus(workOrderId, statusId, updaterInfo, !isLastUpdate)
+      
       results.push({ workOrderId, success: true, error: null })
       
       if (onProgress) {
         onProgress(i + 1, total)
       }
       
-      // Add small delay to avoid overwhelming the API
+      // Add delay between requests (but not after the last one)
       if (i < workOrderUpdates.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500))
+        console.log(`⏱️ Waiting ${delayBetweenRequests}ms before next request...`)
+        await new Promise(resolve => setTimeout(resolve, delayBetweenRequests))
       }
     } catch (error) {
+      console.error(`❌ Failed to update work order ${workOrderId}:`, error.message)
       results.push({ 
         workOrderId, 
         success: false, 
@@ -234,7 +271,35 @@ export const batchUpdateWorkOrders = async (workOrderUpdates, onProgress = null)
     }
   }
   
+  console.log(`✅ Batch update completed. ${results.filter(r => r.success).length}/${total} successful. Webhook triggered with final update.`)
+  
   return results
+}
+
+// Trigger manual webhook (for cases where we need to refresh data independently)
+export const triggerDataSync = async () => {
+  try {
+    console.log(`🔄 Manually triggering data sync webhook...`)
+    const webhookUrl = '/api/sync-webhook'
+    
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+    
+    if (response.ok) {
+      console.log(`✅ Data sync webhook triggered successfully`)
+      return { success: true }
+    } else {
+      console.warn(`⚠️ Data sync webhook returned ${response.status}`)
+      return { success: false, status: response.status }
+    }
+  } catch (error) {
+    console.error(`❌ Failed to trigger data sync webhook:`, error)
+    return { success: false, error: error.message }
+  }
 }
 
 // Get available statuses (fallback to predefined)

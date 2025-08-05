@@ -1,4 +1,4 @@
-// Vercel API function for RazorSync work order operations - Fixed version
+// api/workorder.js - FIXED VERSION with conditional webhook and updater field support
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -12,6 +12,7 @@ export default async function handler(req, res) {
   try {
     // Extract work order ID from query parameters
     const workOrderId = req.query.id || req.query.workorder;
+    const skipWebhook = req.query.skipWebhook === 'true'; // NEW: Support for skipping webhook
 
     if (!workOrderId) {
       return res.status(400).json({ error: 'Work order ID is required' });
@@ -78,7 +79,7 @@ export default async function handler(req, res) {
 
     } else if (req.method === 'POST') {
       // Handle PUT-like operations via POST for work order updates
-      console.log(`📤 Server-side PUT request for work order ${workOrderId}`);
+      console.log(`📤 Server-side PUT request for work order ${workOrderId}${skipWebhook ? ' (skipping webhook)' : ''}`);
       
       const updateData = req.body;
       
@@ -105,6 +106,11 @@ export default async function handler(req, res) {
         ...(updateData.ServiceRequestId !== null && updateData.ServiceRequestId !== undefined && { ServiceRequestId: parseInt(updateData.ServiceRequestId) }),
         ...(updateData.TaxNameId !== null && updateData.TaxNameId !== undefined && { TaxNameId: parseInt(updateData.TaxNameId) }),
         ...(updateData.InvoicingMemo && { InvoicingMemo: updateData.InvoicingMemo }),
+        
+        // NEW: Add updater field if supported by RazorSync API
+        // Check if we have updater information in the request
+        ...(updateData.UpdaterId && { UpdaterId: parseInt(updateData.UpdaterId) }),
+        ...(updateData.UpdaterName && { UpdaterName: updateData.UpdaterName }),
         
         // Add modified date fields
         LastChangeDate: modifiedDate,
@@ -142,20 +148,12 @@ export default async function handler(req, res) {
         statusIdType: typeof payload.StatusId,
         fieldCount: Object.keys(payload).length,
         hasModifiedDate: !!payload.LastChangeDate,
-        hasLocationId: 'LocationId' in payload,
-        hasServiceRequestId: 'ServiceRequestId' in payload,
-        idInContext: payload.IdInContext,
+        hasUpdaterInfo: !!(payload.UpdaterId || payload.UpdaterName),
+        updaterId: payload.UpdaterId,
+        updaterName: payload.UpdaterName,
+        skipWebhook,
         cleanedFields: Object.keys(payload).join(', ')
       });
-
-      // Additional validation for potential issues with older records
-      if (payload.StartDate && payload.EndDate) {
-        const startTime = parseInt(payload.StartDate.match(/\d+/)?.[0] || '0');
-        const endTime = parseInt(payload.EndDate.match(/\d+/)?.[0] || '0');
-        if (startTime > endTime) {
-          console.warn(`⚠️ Warning: StartDate (${startTime}) is after EndDate (${endTime}) for work order ${workOrderId}`);
-        }
-      }
 
       const url = `${RAZORSYNC_CONFIG.baseUrl}/WorkOrder`;
       const headers = {
@@ -189,11 +187,19 @@ export default async function handler(req, res) {
 
       // Handle successful update
       const contentType = response.headers.get('content-type');
+      let result = null;
+      
       if (contentType && contentType.includes('application/json')) {
-        const result = await response.json();
+        result = await response.json();
         console.log(`✅ Successfully updated work order ${workOrderId}`);
-        
-        // Trigger n8n webhook to update Supabase data
+      } else {
+        console.log(`✅ Work order ${workOrderId} updated (non-JSON response)`);
+        result = { success: true };
+      }
+      
+      // FIXED: Only trigger webhook if not skipped (for batch operations)
+      let webhookTriggered = false;
+      if (!skipWebhook) {
         try {
           console.log(`🔄 Triggering n8n workflow to update Supabase...`);
           const webhookUrl = 'http://24.158.242.116:5678/webhook/672008ff-0465-4977-bbf7-426371c06bc6';
@@ -206,6 +212,7 @@ export default async function handler(req, res) {
           
           if (webhookResponse.ok) {
             console.log(`✅ n8n webhook triggered successfully`);
+            webhookTriggered = true;
           } else {
             console.warn(`⚠️ n8n webhook returned ${webhookResponse.status}`);
           }
@@ -213,41 +220,17 @@ export default async function handler(req, res) {
           console.error(`❌ Failed to trigger n8n webhook:`, webhookError);
           // Don't fail the main operation if webhook fails
         }
-        
-        return res.status(200).json({
-          ...result,
-          message: 'Work order updated successfully. Please refresh the list in 5 seconds to see updated data.',
-          webhookTriggered: true
-        });
-      }
-
-      console.log(`✅ Work order ${workOrderId} updated (non-JSON response)`);
-      
-      // Trigger n8n webhook for non-JSON responses too
-      try {
-        console.log(`🔄 Triggering n8n workflow to update Supabase...`);
-        const webhookUrl = 'http://24.158.242.116:5678/webhook/672008ff-0465-4977-bbf7-426371c06bc6';
-        const webhookResponse = await fetch(webhookUrl, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (webhookResponse.ok) {
-          console.log(`✅ n8n webhook triggered successfully`);
-        } else {
-          console.warn(`⚠️ n8n webhook returned ${webhookResponse.status}`);
-        }
-      } catch (webhookError) {
-        console.error(`❌ Failed to trigger n8n webhook:`, webhookError);
-        // Don't fail the main operation if webhook fails
+      } else {
+        console.log(`⏭️ Webhook skipped as requested for batch operation`);
       }
       
-      return res.status(200).json({ 
-        success: true,
-        message: 'Work order updated successfully. Please refresh the list in 5 seconds to see updated data.',
-        webhookTriggered: true
+      return res.status(200).json({
+        ...result,
+        message: skipWebhook 
+          ? 'Work order updated successfully (webhook skipped for batch operation)' 
+          : 'Work order updated successfully. Please refresh the list in 5 seconds to see updated data.',
+        webhookTriggered,
+        webhookSkipped: skipWebhook
       });
 
     } else {

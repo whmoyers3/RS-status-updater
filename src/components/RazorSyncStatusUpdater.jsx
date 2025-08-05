@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Search, RefreshCw, Trash2, AlertCircle, CheckCircle, Clock, Edit3, Users, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, RefreshCw, Trash2, AlertCircle, CheckCircle, Clock, Edit3, Users, ChevronUp, ChevronDown, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useWorkOrders } from '../hooks/useWorkOrders';
 import { getWorkOrderById, getStatuses, getFieldworkers, getIncompleteStatuses } from '../services/supabase';
-import { updateWorkOrderStatus, deleteWorkOrder } from '../services/razorsync';
+import { updateWorkOrderStatus, deleteWorkOrder, batchUpdateWorkOrders } from '../services/razorsync';
 import MultiSelectDropdown from './MultiSelectDropdown';
 
 const RazorSyncStatusUpdater = () => {
@@ -12,7 +12,7 @@ const RazorSyncStatusUpdater = () => {
   const [fieldworkers, setFieldworkers] = useState([]);
   const [selectedStatus, setSelectedStatus] = useState('');
   const [selectedFieldWorker, setSelectedFieldWorker] = useState('');
-  const [selectedStatusIds, setSelectedStatusIds] = useState([]); // New multi-select state
+  const [selectedStatusIds, setSelectedStatusIds] = useState([]);
   const [searchId, setSearchId] = useState('');
   const [searchResult, setSearchResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -21,10 +21,66 @@ const RazorSyncStatusUpdater = () => {
   const [itemsPerPage] = useState(50);
   const [showFutureEvents, setShowFutureEvents] = useState(false);
   const [sortConfig, setSortConfig] = useState({ key: 'rs_start_date', direction: 'asc' });
+  
+  // NEW: Batch processing settings
+  const [batchSettings, setBatchSettings] = useState({
+    delayBetweenRequests: 1000, // 1 second default
+    showSettings: false
+  });
+  
+  // NEW: User information for updater tracking
+  const [currentUser, setCurrentUser] = useState({
+    id: 1, // Default to user 1, should be set based on authentication
+    name: 'System User' // Should be set based on authentication
+  });
 
   const [filters, setFilters] = useState({
     field_worker_id: null,
-    status_ids: [], // Will be set to incomplete statuses by default
+    status_ids: [],
+    limit: itemsPerPage,
+    offset: 0,
+    show_future: false
+  });
+
+  const { workOrders, loading, error, totalCount, refresh } = useWorkOrders(filters, true);import React, { useState, useEffect } from 'react';
+import { Search, RefreshCw, Trash2, AlertCircle, CheckCircle, Clock, Edit3, Users, ChevronUp, ChevronDown, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useWorkOrders } from '../hooks/useWorkOrders';
+import { getWorkOrderById, getStatuses, getFieldworkers, getIncompleteStatuses } from '../services/supabase';
+import { updateWorkOrderStatus, deleteWorkOrder, batchUpdateWorkOrders } from '../services/razorsync';
+import MultiSelectDropdown from './MultiSelectDropdown';
+
+const RazorSyncStatusUpdater = () => {
+  const [activeTab, setActiveTab] = useState('batch');
+  const [selectedOrders, setSelectedOrders] = useState([]);
+  const [statuses, setStatuses] = useState([]);
+  const [fieldworkers, setFieldworkers] = useState([]);
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedFieldWorker, setSelectedFieldWorker] = useState('');
+  const [selectedStatusIds, setSelectedStatusIds] = useState([]);
+  const [searchId, setSearchId] = useState('');
+  const [searchResult, setSearchResult] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [notification, setNotification] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(50);
+  const [showFutureEvents, setShowFutureEvents] = useState(false);
+  const [sortConfig, setSortConfig] = useState({ key: 'rs_start_date', direction: 'asc' });
+  
+  // NEW: Batch processing settings
+  const [batchSettings, setBatchSettings] = useState({
+    delayBetweenRequests: 1000, // 1 second default
+    showSettings: false
+  });
+  
+  // NEW: User information for updater tracking
+  const [currentUser, setCurrentUser] = useState({
+    id: 1, // Default to user 1, should be set based on authentication
+    name: 'System User' // Should be set based on authentication
+  });
+
+  const [filters, setFilters] = useState({
+    field_worker_id: null,
+    status_ids: [],
     limit: itemsPerPage,
     offset: 0,
     show_future: false
@@ -74,7 +130,7 @@ const RazorSyncStatusUpdater = () => {
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
+    setTimeout(() => setNotification(null), 5000); // Increased to 5 seconds
   };
 
   const handleSelectAll = (checked) => {
@@ -93,6 +149,7 @@ const RazorSyncStatusUpdater = () => {
     }
   };
 
+  // FIXED: Improved batch update with timing and single webhook
   const handleBatchUpdate = async () => {
     if (!selectedStatus || selectedOrders.length === 0) {
       showNotification('Please select a status and at least one work order', 'error');
@@ -101,15 +158,33 @@ const RazorSyncStatusUpdater = () => {
 
     setIsLoading(true);
     try {
-      const updatePromises = selectedOrders.map(orderId => 
-        updateWorkOrderStatus(orderId, selectedStatus)
-      );
+      const workOrderUpdates = selectedOrders.map(orderId => ({
+        workOrderId: orderId,
+        statusId: selectedStatus
+      }));
       
-      await Promise.all(updatePromises);
+      let completedCount = 0;
+      const results = await batchUpdateWorkOrders(workOrderUpdates, {
+        delayBetweenRequests: batchSettings.delayBetweenRequests,
+        updaterInfo: currentUser,
+        onProgress: (current, total) => {
+          completedCount = current;
+          showNotification(`Updating... ${current}/${total} completed`, 'info');
+        }
+      });
+      
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.filter(r => !r.success).length;
       
       setSelectedOrders([]);
       setSelectedStatus('');
-      showNotification(`Successfully updated ${selectedOrders.length} work order(s). Refreshing data in 5 seconds...`);
+      
+      if (failureCount === 0) {
+        showNotification(`Successfully updated all ${successCount} work orders. Refreshing data in 5 seconds...`);
+      } else {
+        showNotification(`Updated ${successCount} work orders, ${failureCount} failed. Check console for details. Refreshing data in 5 seconds...`, 'warning');
+        console.log('Failed updates:', results.filter(r => !r.success));
+      }
       
       // Auto-refresh after 5 seconds to show updated data
       setTimeout(() => {
@@ -117,7 +192,7 @@ const RazorSyncStatusUpdater = () => {
       }, 5000);
       
     } catch (error) {
-      showNotification(`Failed to update work orders: ${error.message}`, 'error');
+      showNotification(`Batch update failed: ${error.message}`, 'error');
       console.error('Batch update error:', error);
     } finally {
       setIsLoading(false);
@@ -154,7 +229,7 @@ const RazorSyncStatusUpdater = () => {
 
     setIsLoading(true);
     try {
-      await updateWorkOrderStatus(searchResult.rs_id, newStatusId);
+      await updateWorkOrderStatus(searchResult.rs_id, newStatusId, currentUser);
       
       showNotification('Work order status updated successfully. Refreshing data in 5 seconds...');
       
@@ -163,6 +238,7 @@ const RazorSyncStatusUpdater = () => {
         try {
           const updated = await getWorkOrderById(searchResult.rs_id);
           setSearchResult(updated);
+          refresh(); // Also refresh the main list
           showNotification('Data refreshed with latest information', 'success');
         } catch (error) {
           console.error('Failed to refresh search result:', error);
@@ -241,7 +317,6 @@ const RazorSyncStatusUpdater = () => {
     
     return sortedOrders;
   };
-
   const SortHeader = ({ column, children }) => (
     <th 
       className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -258,7 +333,19 @@ const RazorSyncStatusUpdater = () => {
     </th>
   );
 
-  const totalPages = Math.ceil(totalCount / itemsPerPage);
+  // FIXED: Improved pagination with 5-page limit (250 records max)
+  const maxPages = Math.min(Math.ceil(totalCount / itemsPerPage), 5); // Cap at 5 pages
+  const maxRecords = maxPages * itemsPerPage; // 250 records max
+  const effectiveTotalCount = Math.min(totalCount, maxRecords);
+  const canGoNext = currentPage < maxPages;
+  const canGoPrev = currentPage > 1;
+
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= maxPages) {
+      setCurrentPage(newPage);
+      setSelectedOrders([]); // Clear selection when changing pages
+    }
+  };
 
   const getStatusBadgeColor = (isComplete) => {
     return isComplete 
@@ -291,6 +378,35 @@ const RazorSyncStatusUpdater = () => {
     return orders;
   };
 
+  // FIXED: Show correct fieldworker names (was showing "Unassigned" for all)
+  const getFieldWorkerDisplay = (workOrder) => {
+    // Check if we have fieldworker data
+    if (workOrder.fieldworkers?.full_name) {
+      return workOrder.fieldworkers.full_name;
+    }
+    
+    // If no fieldworker data but we have an ID, try to find in our fieldworkers list
+    if (workOrder.rs_field_worker_id) {
+      const fieldworker = fieldworkers.find(fw => fw.id === workOrder.rs_field_worker_id);
+      if (fieldworker) {
+        return fieldworker.full_name;
+      }
+      return `FW ${workOrder.rs_field_worker_id}`; // Show ID if we can't find the name
+    }
+    
+    // Truly unassigned
+    return 'Unassigned';
+  };
+
+  // Timing options for batch processing
+  const timingOptions = [
+    { value: 500, label: '0.5 seconds (Fast)' },
+    { value: 1000, label: '1 second (Default)' },
+    { value: 1500, label: '1.5 seconds (Conservative)' },
+    { value: 2000, label: '2 seconds (Very Safe)' },
+    { value: 3000, label: '3 seconds (Ultra Safe)' }
+  ];
+
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -319,6 +435,9 @@ const RazorSyncStatusUpdater = () => {
             <div className="flex items-center">
               <Edit3 className="w-8 h-8 text-blue-600 mr-3" />
               <h1 className="text-2xl font-bold text-gray-900">RazorSync Status Updater</h1>
+              <span className="ml-4 text-sm text-gray-500">
+                Logged in as: {currentUser.name}
+              </span>
             </div>
             <button 
               onClick={refresh}
@@ -334,14 +453,16 @@ const RazorSyncStatusUpdater = () => {
 
       {notification && (
         <div className={`fixed top-4 right-4 z-50 p-4 rounded-md shadow-lg ${
-          notification.type === 'success' ? 'bg-green-500' : 'bg-red-500'
-        } text-white`}>
+          notification.type === 'success' ? 'bg-green-500' : 
+          notification.type === 'warning' ? 'bg-yellow-500' :
+          notification.type === 'info' ? 'bg-blue-500' : 'bg-red-500'
+        } text-white max-w-md`}>
           <div className="flex items-center">
-            {notification.type === 'success' ? 
-              <CheckCircle className="w-5 h-5 mr-2" /> : 
-              <AlertCircle className="w-5 h-5 mr-2" />
+            {notification.type === 'success' ? <CheckCircle className="w-5 h-5 mr-2" /> : 
+             notification.type === 'info' ? <Clock className="w-5 h-5 mr-2" /> :
+             <AlertCircle className="w-5 h-5 mr-2" />
             }
-            {notification.message}
+            <span className="text-sm">{notification.message}</span>
           </div>
         </div>
       )}
@@ -436,7 +557,37 @@ const RazorSyncStatusUpdater = () => {
             </div>
 
             <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Select New Status</h3>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium text-gray-900">Select New Status</h3>
+                <button
+                  onClick={() => setBatchSettings(prev => ({ ...prev, showSettings: !prev.showSettings }))}
+                  className="flex items-center px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+                >
+                  <Settings className="w-4 h-4 mr-2" />
+                  Batch Settings
+                </button>
+              </div>
+              
+              {batchSettings.showSettings && (
+                <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">Timing Between Requests</h4>
+                  <select
+                    value={batchSettings.delayBetweenRequests}
+                    onChange={(e) => setBatchSettings(prev => ({ ...prev, delayBetweenRequests: parseInt(e.target.value) }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {timingOptions.map(option => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Longer delays reduce server load but increase total processing time.
+                  </p>
+                </div>
+              )}
+              
               <div className="flex flex-col sm:flex-row gap-4">
                 <select
                   value={selectedStatus}
@@ -461,10 +612,40 @@ const RazorSyncStatusUpdater = () => {
             </div>
 
             <div className="bg-white rounded-lg shadow overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
+              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                 <h3 className="text-lg font-medium text-gray-900">
-                  Showing {sortedAndFilteredOrders.length} of {totalCount} results
+                  Showing {sortedAndFilteredOrders.length} of {effectiveTotalCount} results
+                  {totalCount > maxRecords && (
+                    <span className="text-sm text-orange-600 ml-2">
+                      (Limited to {maxRecords} records - use filters to narrow results)
+                    </span>
+                  )}
                 </h3>
+                
+                {/* NEW: Pagination Controls */}
+                {maxPages > 1 && (
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={!canGoPrev}
+                      className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    
+                    <span className="text-sm text-gray-600">
+                      Page {currentPage} of {maxPages}
+                    </span>
+                    
+                    <button
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={!canGoNext}
+                      className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
               
               {loading ? (
@@ -522,7 +703,7 @@ const RazorSyncStatusUpdater = () => {
                             {formatDate(workOrder.rs_start_date)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {workOrder.fieldworkers?.full_name || 'Unassigned'}
+                            {getFieldWorkerDisplay(workOrder)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -588,7 +769,7 @@ const RazorSyncStatusUpdater = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Field Worker</label>
                     <p className="mt-1 text-sm text-gray-900">
-                      {searchResult.fieldworkers?.full_name || 'Unassigned'}
+                      {getFieldWorkerDisplay(searchResult)}
                     </p>
                   </div>
                   <div>
