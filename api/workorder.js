@@ -107,10 +107,11 @@ export default async function handler(req, res) {
         ...(updateData.TaxNameId !== null && updateData.TaxNameId !== undefined && { TaxNameId: parseInt(updateData.TaxNameId) }),
         ...(updateData.InvoicingMemo && { InvoicingMemo: updateData.InvoicingMemo }),
         
-        // NEW: Add updater field if supported by RazorSync API
-        // Check if we have updater information in the request
+        // NEW: Add updater fields if supported by RazorSync API
+        // Try multiple field names that RazorSync might use
         ...(updateData.UpdaterId && { UpdaterId: parseInt(updateData.UpdaterId) }),
         ...(updateData.UpdaterName && { UpdaterName: updateData.UpdaterName }),
+        ...(updateData.ModifiedBy && { ModifiedBy: parseInt(updateData.ModifiedBy) }),
         
         // Add modified date fields
         LastChangeDate: modifiedDate,
@@ -148,11 +149,13 @@ export default async function handler(req, res) {
         statusIdType: typeof payload.StatusId,
         fieldCount: Object.keys(payload).length,
         hasModifiedDate: !!payload.LastChangeDate,
-        hasUpdaterInfo: !!(payload.UpdaterId || payload.UpdaterName),
+        hasUpdaterInfo: !!(payload.UpdaterId || payload.UpdaterName || payload.ActorId || payload.ModifiedBy),
+        actorId: payload.ActorId,
         updaterId: payload.UpdaterId,
         updaterName: payload.UpdaterName,
+        modifiedBy: payload.ModifiedBy,
         skipWebhook,
-        cleanedFields: Object.keys(payload).join(', ')
+        allFields: Object.keys(payload).join(', ')
       });
 
       const url = `${RAZORSYNC_CONFIG.baseUrl}/WorkOrder`;

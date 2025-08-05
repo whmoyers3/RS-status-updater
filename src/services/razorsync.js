@@ -101,6 +101,11 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId, updaterInfo =
       currentStatus: currentWorkOrder.StatusId,
       currentFieldWorker: currentWorkOrder.FieldWorkerId,
       fieldWorkerType: typeof currentWorkOrder.FieldWorkerId,
+      actorId: currentWorkOrder.ActorId,
+      modifiedBy: currentWorkOrder.ModifiedBy,
+      modifiedDate: currentWorkOrder.ModifiedDate,
+      lastChangeDate: currentWorkOrder.LastChangeDate,
+      availableFields: Object.keys(currentWorkOrder).filter(key => key.toLowerCase().includes('actor') || key.toLowerCase().includes('modif') || key.toLowerCase().includes('updat') || key.toLowerCase().includes('chang')),
       description: currentWorkOrder.Description?.substring(0, 50) + '...'
     })
     
@@ -171,17 +176,20 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId, updaterInfo =
     // Only change the status to the numeric value (and potentially field worker + description if reassigned)
     updateData.StatusId = numericStatusId
     
-    // Add updater information if provided
+    // Add updater information if provided (for RazorSync's internal tracking)
     if (updaterInfo) {
-      // Add updater fields to payload for API tracking
-      updateData.UpdaterId = updaterInfo.id;
-      updateData.UpdaterName = updaterInfo.name;
+      // Try multiple field names that RazorSync might use for tracking updates
+      updateData.ActorId = updaterInfo.id; // Primary field for who performed the action
+      updateData.UpdaterId = updaterInfo.id; // Backup field name
+      updateData.UpdaterName = updaterInfo.name; // Name field
+      updateData.ModifiedBy = updaterInfo.id; // Another possible field name
       
-      // Add updater note to description for visual tracking
-      const updaterNote = ` (updated by ${updaterInfo.name || updaterInfo.id} on ${new Date().toLocaleDateString()})`
-      if (!updateData.Description?.includes(updaterNote)) {
-        updateData.Description = (updateData.Description || '') + updaterNote
-      }
+      console.log(`👤 Updater info added to payload:`, {
+        updaterId: updaterInfo.id,
+        updaterName: updaterInfo.name,
+        updaterIdType: typeof updaterInfo.id,
+        actorId: updaterInfo.id
+      });
     }
     
     console.log(`🔧 Update payload prepared:`, {
