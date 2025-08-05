@@ -337,15 +337,6 @@ const RazorSyncStatusUpdater = () => {
 
   // FIXED: Show correct fieldworker names (improved with better debugging)
   const getFieldWorkerDisplay = (workOrder) => {
-    // Debug logging (remove in production)
-    console.log('Field Worker Debug:', {
-      workOrderId: workOrder.rs_id,
-      fieldworkerId: workOrder.rs_field_worker_id,
-      fieldworkerIdType: typeof workOrder.rs_field_worker_id,
-      relationshipData: workOrder.fieldworkers,
-      availableFieldworkers: fieldworkers.length
-    });
-    
     // Check if we have fieldworker relationship data
     if (workOrder.fieldworkers?.full_name) {
       return workOrder.fieldworkers.full_name;

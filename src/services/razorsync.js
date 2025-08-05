@@ -114,22 +114,27 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId, updaterInfo =
     
     // Get list of active fieldworkers from Supabase
     const fieldworkers = await getFieldworkers()
-    const activeFieldWorkerIds = fieldworkers.map(fw => fw.id)
+    const activeFieldWorkerIds = fieldworkers.map(fw => parseInt(fw.id)) // Ensure all IDs are numbers
     
     let updateData = { ...currentWorkOrder }
     let fieldWorkerChanged = false
     
     // FIXED LOGIC: Only reassign if field worker is null, undefined, 0, or not in active list
-    const currentFWId = currentWorkOrder.FieldWorkerId
-    const isUnassigned = !currentFWId || currentFWId === 0 || currentFWId === null || currentFWId === undefined
-    const isDeactivated = currentFWId && !activeFieldWorkerIds.includes(currentFWId)
+    const currentFWId = parseInt(currentWorkOrder.FieldWorkerId) // Convert to number for comparison
+    const isUnassigned = !currentWorkOrder.FieldWorkerId || currentWorkOrder.FieldWorkerId === 0 || currentWorkOrder.FieldWorkerId === null || currentWorkOrder.FieldWorkerId === undefined
+    const isDeactivated = currentWorkOrder.FieldWorkerId && !activeFieldWorkerIds.includes(currentFWId)
     
     console.log(`🔍 Field Worker Analysis:`, {
+      originalFieldWorkerId: currentWorkOrder.FieldWorkerId,
+      originalFieldWorkerIdType: typeof currentWorkOrder.FieldWorkerId,
       currentFWId,
+      currentFWIdType: typeof currentFWId,
       isUnassigned,
       isDeactivated,
-      activeFieldWorkerIds: activeFieldWorkerIds.slice(0, 5), // Show first 5 for debugging
-      shouldReassign: isUnassigned || isDeactivated
+      activeFieldWorkerIds: activeFieldWorkerIds.slice(0, 10), // Show first 10 for debugging
+      totalActiveFieldworkers: activeFieldWorkerIds.length,
+      shouldReassign: isUnassigned || isDeactivated,
+      isInActiveList: activeFieldWorkerIds.includes(currentFWId)
     })
     
     if (isUnassigned || isDeactivated) {
@@ -168,7 +173,11 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId, updaterInfo =
     
     // Add updater information if provided
     if (updaterInfo) {
-      // Add updater note to description
+      // Add updater fields to payload for API tracking
+      updateData.UpdaterId = updaterInfo.id;
+      updateData.UpdaterName = updaterInfo.name;
+      
+      // Add updater note to description for visual tracking
       const updaterNote = ` (updated by ${updaterInfo.name || updaterInfo.id} on ${new Date().toLocaleDateString()})`
       if (!updateData.Description?.includes(updaterNote)) {
         updateData.Description = (updateData.Description || '') + updaterNote
@@ -185,6 +194,9 @@ export const updateWorkOrderStatus = async (razorSyncId, statusId, updaterInfo =
       fieldWorkerChanged,
       descriptionChanged: updateData.Description !== currentWorkOrder.Description,
       fieldsCount: Object.keys(updateData).length,
+      hasUpdaterInfo: !!(updateData.UpdaterId || updateData.UpdaterName),
+      updaterId: updateData.UpdaterId,
+      updaterName: updateData.UpdaterName,
       skipWebhook
     })
     
