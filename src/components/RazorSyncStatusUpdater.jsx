@@ -30,8 +30,8 @@ const RazorSyncStatusUpdater = () => {
   
   // NEW: User information for updater tracking
   const [currentUser, setCurrentUser] = useState({
-    id: 1, // Default to user 1, should be set based on authentication
-    name: 'System User' // Should be set based on authentication
+    id: 1, // Default to user 1
+    name: 'System User' // Default name
   });
 
   const [filters, setFilters] = useState({
@@ -335,23 +335,37 @@ const RazorSyncStatusUpdater = () => {
     return orders;
   };
 
-  // FIXED: Show correct fieldworker names (was showing "Unassigned" for all)
+  // FIXED: Show correct fieldworker names (improved with better debugging)
   const getFieldWorkerDisplay = (workOrder) => {
-    // Check if we have fieldworker data
+    // Debug logging (remove in production)
+    console.log('Field Worker Debug:', {
+      workOrderId: workOrder.rs_id,
+      fieldworkerId: workOrder.rs_field_worker_id,
+      fieldworkerIdType: typeof workOrder.rs_field_worker_id,
+      relationshipData: workOrder.fieldworkers,
+      availableFieldworkers: fieldworkers.length
+    });
+    
+    // Check if we have fieldworker relationship data
     if (workOrder.fieldworkers?.full_name) {
       return workOrder.fieldworkers.full_name;
     }
     
-    // If no fieldworker data but we have an ID, try to find in our fieldworkers list
+    // If no relationship data but we have an ID, try to find in our fieldworkers list
     if (workOrder.rs_field_worker_id) {
-      const fieldworker = fieldworkers.find(fw => fw.id === workOrder.rs_field_worker_id);
+      // Convert both to numbers for comparison
+      const workOrderFWId = parseInt(workOrder.rs_field_worker_id);
+      const fieldworker = fieldworkers.find(fw => parseInt(fw.id) === workOrderFWId);
+      
       if (fieldworker) {
         return fieldworker.full_name;
       }
-      return `FW ${workOrder.rs_field_worker_id}`; // Show ID if we can't find the name
+      
+      // Show ID with name if we can't find a match
+      return `Field Worker ${workOrderFWId}`;
     }
     
-    // Truly unassigned
+    // Truly unassigned (null, undefined, or 0)
     return 'Unassigned';
   };
 
@@ -391,18 +405,45 @@ const RazorSyncStatusUpdater = () => {
             <div className="flex items-center">
               <Edit3 className="w-8 h-8 text-blue-600 mr-3" />
               <h1 className="text-2xl font-bold text-gray-900">RazorSync Status Updater</h1>
-              <span className="ml-4 text-sm text-gray-500">
-                Logged in as: {currentUser.name}
-              </span>
+              <div className="ml-6 flex items-center px-3 py-1 bg-blue-50 rounded-full">
+                <Users className="w-4 h-4 text-blue-600 mr-2" />
+                <span className="text-sm text-blue-700 font-medium">
+                  {currentUser.name}
+                </span>
+              </div>
             </div>
-            <button 
-              onClick={refresh}
-              disabled={loading}
-              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
-            >
-              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Refresh Data
-            </button>
+            <div className="flex items-center space-x-4">
+              <button 
+                onClick={refresh}
+                disabled={loading}
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refresh Data
+              </button>
+              
+              <div className="flex items-center space-x-2">
+                <span className="text-sm text-gray-600">Quick Change User:</span>
+                <select
+                  value={currentUser.id}
+                  onChange={(e) => {
+                    const selectedFieldworker = fieldworkers.find(fw => fw.id === parseInt(e.target.value));
+                    setCurrentUser({
+                      id: parseInt(e.target.value),
+                      name: selectedFieldworker ? selectedFieldworker.full_name : 'System User'
+                    });
+                  }}
+                  className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value={1}>System User</option>
+                  {fieldworkers.map(fw => (
+                    <option key={fw.id} value={fw.id}>
+                      {fw.full_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -526,21 +567,50 @@ const RazorSyncStatusUpdater = () => {
               
               {batchSettings.showSettings && (
                 <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">Timing Between Requests</h4>
-                  <select
-                    value={batchSettings.delayBetweenRequests}
-                    onChange={(e) => setBatchSettings(prev => ({ ...prev, delayBetweenRequests: parseInt(e.target.value) }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {timingOptions.map(option => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Longer delays reduce server load but increase total processing time.
-                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">Timing Between Requests</h4>
+                      <select
+                        value={batchSettings.delayBetweenRequests}
+                        onChange={(e) => setBatchSettings(prev => ({ ...prev, delayBetweenRequests: parseInt(e.target.value) }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        {timingOptions.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Longer delays reduce server load but increase total processing time.
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">Updated By</h4>
+                      <select
+                        value={currentUser.id}
+                        onChange={(e) => {
+                          const selectedFieldworker = fieldworkers.find(fw => fw.id === parseInt(e.target.value));
+                          setCurrentUser({
+                            id: parseInt(e.target.value),
+                            name: selectedFieldworker ? selectedFieldworker.full_name : 'System User'
+                          });
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value={1}>System User</option>
+                        {fieldworkers.map(fw => (
+                          <option key={fw.id} value={fw.id}>
+                            {fw.full_name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        This will be recorded with all updates made during this session.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
               
