@@ -42,50 +42,6 @@ const RazorSyncStatusUpdater = () => {
     show_future: false
   });
 
-  const { workOrders, loading, error, totalCount, refresh } = useWorkOrders(filters, true);import React, { useState, useEffect } from 'react';
-import { Search, RefreshCw, Trash2, AlertCircle, CheckCircle, Clock, Edit3, Users, ChevronUp, ChevronDown, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useWorkOrders } from '../hooks/useWorkOrders';
-import { getWorkOrderById, getStatuses, getFieldworkers, getIncompleteStatuses } from '../services/supabase';
-import { updateWorkOrderStatus, deleteWorkOrder, batchUpdateWorkOrders } from '../services/razorsync';
-import MultiSelectDropdown from './MultiSelectDropdown';
-
-const RazorSyncStatusUpdater = () => {
-  const [activeTab, setActiveTab] = useState('batch');
-  const [selectedOrders, setSelectedOrders] = useState([]);
-  const [statuses, setStatuses] = useState([]);
-  const [fieldworkers, setFieldworkers] = useState([]);
-  const [selectedStatus, setSelectedStatus] = useState('');
-  const [selectedFieldWorker, setSelectedFieldWorker] = useState('');
-  const [selectedStatusIds, setSelectedStatusIds] = useState([]);
-  const [searchId, setSearchId] = useState('');
-  const [searchResult, setSearchResult] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [notification, setNotification] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(50);
-  const [showFutureEvents, setShowFutureEvents] = useState(false);
-  const [sortConfig, setSortConfig] = useState({ key: 'rs_start_date', direction: 'asc' });
-  
-  // NEW: Batch processing settings
-  const [batchSettings, setBatchSettings] = useState({
-    delayBetweenRequests: 1000, // 1 second default
-    showSettings: false
-  });
-  
-  // NEW: User information for updater tracking
-  const [currentUser, setCurrentUser] = useState({
-    id: 1, // Default to user 1, should be set based on authentication
-    name: 'System User' // Should be set based on authentication
-  });
-
-  const [filters, setFilters] = useState({
-    field_worker_id: null,
-    status_ids: [],
-    limit: itemsPerPage,
-    offset: 0,
-    show_future: false
-  });
-
   const { workOrders, loading, error, totalCount, refresh } = useWorkOrders(filters, true);
 
   useEffect(() => {
@@ -317,6 +273,7 @@ const RazorSyncStatusUpdater = () => {
     
     return sortedOrders;
   };
+
   const SortHeader = ({ column, children }) => (
     <th 
       className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -426,7 +383,6 @@ const RazorSyncStatusUpdater = () => {
   }
 
   const sortedAndFilteredOrders = filterWorkOrdersByDate(getSortedWorkOrders());
-
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white shadow-sm border-b">
@@ -622,7 +578,6 @@ const RazorSyncStatusUpdater = () => {
                   )}
                 </h3>
                 
-                {/* NEW: Pagination Controls */}
                 {maxPages > 1 && (
                   <div className="flex items-center space-x-2">
                     <button
