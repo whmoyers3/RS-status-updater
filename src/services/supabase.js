@@ -146,41 +146,69 @@ export const getFieldworkers = async () => {
 // Remove the old getIncompleteWorkOrders function as it's no longer needed
 // The new filtering system handles this at the database level
 
-// Get RC homes data with matching lookup using a proper JOIN
+// Get RC homes data with matching lookup - using reliable approach
 export const getRCHomesData = async () => {
   try {
-    // Use a single query with JOIN to get the matching data efficiently
-    const { data, error } = await supabase
+    // First get the matching lookup data with service request IDs
+    const { data: matchingData, error: matchingError } = await supabase
       .from('rc_rs_matching_lookup')
-      .select(`
-        rs_service_request_id,
-        rc_home_id,
-        rc_homes!inner(
-          id,
-          home_status
-        )
-      `)
+      .select('rs_service_request_id, rc_home_id')
       .not('rs_service_request_id', 'is', null)
-      .not('rc_homes.home_status', 'is', null)
+      .not('rc_home_id', 'is', null)
 
-    if (error) {
-      console.warn('Failed to fetch RC homes data with JOIN:', error.message)
+    if (matchingError) {
+      console.warn('Failed to fetch RC matching data:', matchingError.message)
       return []
     }
 
-    if (!data || data.length === 0) {
+    if (!matchingData || matchingData.length === 0) {
+      console.warn('No RC matching data found')
       return []
     }
 
-    // Transform the joined data into the expected format
-    return data.map(item => ({
-      rs_service_request_id: item.rs_service_request_id,
-      rc_home_id: item.rc_home_id,
-      home_status: item.rc_homes?.home_status || null
-    })).filter(item => item.home_status !== null && item.rs_service_request_id !== null)
+    // Get unique rc_home_ids
+    const rcHomeIds = [...new Set(matchingData.map(item => item.rc_home_id).filter(Boolean))]
+    
+    if (rcHomeIds.length === 0) {
+      console.warn('No RC home IDs found')
+      return []
+    }
+
+    // Fetch RC homes data
+    const { data: rcHomesData, error: homesError } = await supabase
+      .from('rc_homes')
+      .select('id, home_status')
+      .in('id', rcHomeIds)
+      .not('home_status', 'is', null)
+
+    if (homesError) {
+      console.warn('Failed to fetch RC homes data:', homesError.message)
+      return []
+    }
+
+    if (!rcHomesData || rcHomesData.length === 0) {
+      console.warn('No RC homes data found')
+      return []
+    }
+
+    // Create a map of rc_home_id to home data
+    const homeMap = new Map(rcHomesData.map(home => [home.id, home]))
+
+    // Combine matching data with home data
+    const result = matchingData.map(match => {
+      const homeData = homeMap.get(match.rc_home_id)
+      return {
+        rs_service_request_id: match.rs_service_request_id,
+        rc_home_id: match.rc_home_id,
+        home_status: homeData?.home_status || null
+      }
+    }).filter(item => item.home_status !== null && item.rs_service_request_id !== null)
+
+    console.log(`RC Homes data fetched: ${result.length} records`)
+    return result
     
   } catch (error) {
-    console.warn('Error fetching RC homes data:', error.message)
+    console.error('Error fetching RC homes data:', error)
     return []
   }
 }
