@@ -55,12 +55,38 @@ export const getWorkOrders = async (filters = {}) => {
   const rcHomesMap = new Map(rcHomesData.map(home => [home.rs_service_request_id, home]))
 
   // Combine the data manually
-  const enrichedWorkOrders = (workOrders || []).map(workOrder => ({
-    ...workOrder,
-    rs_status_lookup: statusMap.get(workOrder.rs_status_id) || null,
-    fieldworkers: fieldworkerMap.get(workOrder.rs_field_worker_id) || null,
-    rc_home: rcHomesMap.get(workOrder.rs_service_request_id) || null
-  }))
+  const enrichedWorkOrders = (workOrders || []).map(workOrder => {
+    const rcHome = rcHomesMap.get(workOrder.rs_service_request_id)
+    return {
+      ...workOrder,
+      rs_status_lookup: statusMap.get(workOrder.rs_status_id) || null,
+      fieldworkers: fieldworkerMap.get(workOrder.rs_field_worker_id) || null,
+      rc_home: rcHome || null
+    }
+  })
+
+  // Add debugging for RC home matching
+  console.log('🔗 Work Order to RC Home matching debug:')
+  const workOrdersWithServiceIds = workOrders.filter(wo => wo.rs_service_request_id)
+  console.log(`📋 Work orders with service IDs: ${workOrdersWithServiceIds.length}`)
+  
+  if (workOrdersWithServiceIds.length > 0) {
+    const serviceIds = workOrdersWithServiceIds.map(wo => wo.rs_service_request_id)
+    console.log(`🔢 Service ID range: ${Math.min(...serviceIds)} - ${Math.max(...serviceIds)}`)
+    console.log('🔍 First 5 service IDs:', serviceIds.slice(0, 5))
+    
+    const matchedCount = enrichedWorkOrders.filter(wo => wo.rc_home).length
+    console.log(`✅ Matched RC homes: ${matchedCount}/${workOrders.length}`)
+    
+    if (matchedCount > 0) {
+      const sample = enrichedWorkOrders.find(wo => wo.rc_home)
+      console.log('📄 Sample matched work order:', {
+        rs_id: sample.rs_id,
+        rs_service_request_id: sample.rs_service_request_id,
+        rc_home_status: sample.rc_home?.home_status
+      })
+    }
+  }
 
   return enrichedWorkOrders
 }
@@ -149,6 +175,8 @@ export const getFieldworkers = async () => {
 // Get RC homes data with matching lookup - using reliable approach
 export const getRCHomesData = async () => {
   try {
+    console.log('🔍 Starting RC Homes data fetch...')
+    
     // First get the matching lookup data with service request IDs
     const { data: matchingData, error: matchingError } = await supabase
       .from('rc_rs_matching_lookup')
@@ -157,22 +185,27 @@ export const getRCHomesData = async () => {
       .not('rc_home_id', 'is', null)
 
     if (matchingError) {
-      console.warn('Failed to fetch RC matching data:', matchingError.message)
+      console.error('❌ Failed to fetch RC matching data:', matchingError.message)
       return []
     }
 
     if (!matchingData || matchingData.length === 0) {
-      console.warn('No RC matching data found')
+      console.warn('⚠️ No RC matching data found')
       return []
     }
+
+    console.log(`✅ Fetched ${matchingData.length} RC matching records`)
+    console.log('📊 Sample matching data:', matchingData.slice(0, 3))
 
     // Get unique rc_home_ids
     const rcHomeIds = [...new Set(matchingData.map(item => item.rc_home_id).filter(Boolean))]
     
     if (rcHomeIds.length === 0) {
-      console.warn('No RC home IDs found')
+      console.warn('⚠️ No RC home IDs found')
       return []
     }
+
+    console.log(`🏠 Found ${rcHomeIds.length} unique RC home IDs`)
 
     // Fetch RC homes data
     const { data: rcHomesData, error: homesError } = await supabase
@@ -182,14 +215,17 @@ export const getRCHomesData = async () => {
       .not('home_status', 'is', null)
 
     if (homesError) {
-      console.warn('Failed to fetch RC homes data:', homesError.message)
+      console.error('❌ Failed to fetch RC homes data:', homesError.message)
       return []
     }
 
     if (!rcHomesData || rcHomesData.length === 0) {
-      console.warn('No RC homes data found')
+      console.warn('⚠️ No RC homes data found')
       return []
     }
+
+    console.log(`🏡 Fetched ${rcHomesData.length} RC homes records`)
+    console.log('📊 Sample RC homes data:', rcHomesData.slice(0, 3))
 
     // Create a map of rc_home_id to home data
     const homeMap = new Map(rcHomesData.map(home => [home.id, home]))
@@ -204,11 +240,19 @@ export const getRCHomesData = async () => {
       }
     }).filter(item => item.home_status !== null && item.rs_service_request_id !== null)
 
-    console.log(`RC Homes data fetched: ${result.length} records`)
+    console.log(`🎯 Final RC Homes data: ${result.length} records with valid matches`)
+    console.log('📊 Sample final data:', result.slice(0, 3))
+    
+    // Log some statistics
+    const serviceRequestIds = result.map(r => r.rs_service_request_id)
+    const minId = Math.min(...serviceRequestIds)
+    const maxId = Math.max(...serviceRequestIds)
+    console.log(`📈 Service Request ID range: ${minId} - ${maxId}`)
+    
     return result
     
   } catch (error) {
-    console.error('Error fetching RC homes data:', error)
+    console.error('💥 Error fetching RC homes data:', error)
     return []
   }
 }
