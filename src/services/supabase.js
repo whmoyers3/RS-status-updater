@@ -56,7 +56,10 @@ export const getWorkOrders = async (filters = {}) => {
 
   // Combine the data manually
   const enrichedWorkOrders = (workOrders || []).map(workOrder => {
-    const rcHome = rcHomesMap.get(workOrder.rs_service_request_id)
+    // Ensure we're comparing the same data types
+    const workOrderServiceId = workOrder.rs_service_request_id ? parseInt(workOrder.rs_service_request_id) : null
+    const rcHome = workOrderServiceId ? rcHomesMap.get(workOrderServiceId) : null
+    
     return {
       ...workOrder,
       rs_status_lookup: statusMap.get(workOrder.rs_status_id) || null,
@@ -234,7 +237,7 @@ export const getRCHomesData = async () => {
     const result = matchingData.map(match => {
       const homeData = homeMap.get(match.rc_home_id)
       return {
-        rs_service_request_id: match.rs_service_request_id,
+        rs_service_request_id: parseInt(match.rs_service_request_id), // Ensure integer
         rc_home_id: match.rc_home_id,
         home_status: homeData?.home_status || null
       }
