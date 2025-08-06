@@ -254,6 +254,9 @@ const RazorSyncStatusUpdater = () => {
       } else if (sortConfig.key === 'fieldworker_name') {
         aValue = a.fieldworkers?.full_name || '';
         bValue = b.fieldworkers?.full_name || '';
+      } else if (sortConfig.key === 'rc_status') {
+        aValue = a.rc_home?.home_status || '';
+        bValue = b.rc_home?.home_status || '';
       }
       
       if (sortConfig.key === 'rs_start_date') {
@@ -693,6 +696,7 @@ const RazorSyncStatusUpdater = () => {
                         <SortHeader column="rs_start_date">Start Date</SortHeader>
                         <SortHeader column="fieldworker_name">Field Worker</SortHeader>
                         <SortHeader column="status_description">Status</SortHeader>
+                        <SortHeader column="rc_status">RC Status</SortHeader>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -727,6 +731,20 @@ const RazorSyncStatusUpdater = () => {
                             }`}>
                               {workOrder.rs_status_lookup?.status_description || 'Unknown'}
                             </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {workOrder.rc_home?.home_status ? (
+                              <a
+                                href={`https://rcdog.gearheadforhire.com/homes/${workOrder.rc_home.rc_home_id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                              >
+                                {workOrder.rc_home.home_status}
+                              </a>
+                            ) : (
+                              <span className="text-gray-400 text-sm">N/A</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -795,6 +813,21 @@ const RazorSyncStatusUpdater = () => {
                     }`}>
                       {searchResult.rs_status_lookup?.status_description || 'Unknown'}
                     </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">RC Status</label>
+                    {searchResult.rc_home?.home_status ? (
+                      <a
+                        href={`https://rcdog.gearheadforhire.com/homes/${searchResult.rc_home.rc_home_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer inline-block mt-1"
+                      >
+                        {searchResult.rc_home.home_status}
+                      </a>
+                    ) : (
+                      <span className="text-gray-400 text-sm block mt-1">N/A</span>
+                    )}
                   </div>
                 </div>
 

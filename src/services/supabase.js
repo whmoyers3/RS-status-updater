@@ -42,21 +42,24 @@ export const getWorkOrders = async (filters = {}) => {
     throw new Error(`Failed to fetch work orders: ${error.message}`)
   }
 
-  // Manually fetch status and fieldworker data for enrichment
-  const [statusData, fieldworkerData] = await Promise.all([
+  // Manually fetch status, fieldworker, and RC homes data for enrichment
+  const [statusData, fieldworkerData, rcHomesData] = await Promise.all([
     getStatuses(),
-    getFieldworkers()
+    getFieldworkers(),
+    getRCHomesData()
   ])
 
   // Create lookup maps for better performance
   const statusMap = new Map(statusData.map(status => [status.status_id, status]))
   const fieldworkerMap = new Map(fieldworkerData.map(fw => [fw.id, fw]))
+  const rcHomesMap = new Map(rcHomesData.map(home => [home.rs_service_request_id, home]))
 
   // Combine the data manually
   const enrichedWorkOrders = (workOrders || []).map(workOrder => ({
     ...workOrder,
     rs_status_lookup: statusMap.get(workOrder.rs_status_id) || null,
-    fieldworkers: fieldworkerMap.get(workOrder.rs_field_worker_id) || null
+    fieldworkers: fieldworkerMap.get(workOrder.rs_field_worker_id) || null,
+    rc_home: rcHomesMap.get(workOrder.rs_service_request_id) || null
   }))
 
   return enrichedWorkOrders
@@ -78,19 +81,22 @@ export const getWorkOrderById = async (id) => {
   }
 
   // Manually fetch related data
-  const [statusData, fieldworkerData] = await Promise.all([
+  const [statusData, fieldworkerData, rcHomesData] = await Promise.all([
     getStatuses(),
-    getFieldworkers()
+    getFieldworkers(),
+    getRCHomesData()
   ])
 
   const statusMap = new Map(statusData.map(status => [status.status_id, status]))
   const fieldworkerMap = new Map(fieldworkerData.map(fw => [fw.id, fw]))
+  const rcHomesMap = new Map(rcHomesData.map(home => [home.rs_service_request_id, home]))
 
   // Enrich the work order with related data
   return {
     ...workOrder,
     rs_status_lookup: statusMap.get(workOrder.rs_status_id) || null,
-    fieldworkers: fieldworkerMap.get(workOrder.rs_field_worker_id) || null
+    fieldworkers: fieldworkerMap.get(workOrder.rs_field_worker_id) || null,
+    rc_home: rcHomesMap.get(workOrder.rs_service_request_id) || null
   }
 }
 
@@ -139,6 +145,54 @@ export const getFieldworkers = async () => {
 
 // Remove the old getIncompleteWorkOrders function as it's no longer needed
 // The new filtering system handles this at the database level
+
+// Get RC homes data with matching lookup
+export const getRCHomesData = async () => {
+  // First get the matching lookup data
+  const { data: matchingData, error: matchingError } = await supabase
+    .from('rc_rs_matching_lookup')
+    .select('rs_service_request_id, rc_home_id')
+
+  if (matchingError) {
+    console.warn('Failed to fetch RC matching data:', matchingError.message)
+    return [] // Return empty array if this fails - it's optional data
+  }
+
+  if (!matchingData || matchingData.length === 0) {
+    return []
+  }
+
+  // Get unique rc_home_ids
+  const rcHomeIds = [...new Set(matchingData.map(item => item.rc_home_id).filter(Boolean))]
+  
+  if (rcHomeIds.length === 0) {
+    return []
+  }
+
+  // Fetch RC homes data
+  const { data: rcHomesData, error: homesError } = await supabase
+    .from('rc_homes')
+    .select('id, home_status')
+    .in('id', rcHomeIds)
+
+  if (homesError) {
+    console.warn('Failed to fetch RC homes data:', homesError.message)
+    return []
+  }
+
+  // Create a map of rc_home_id to home data
+  const homeMap = new Map((rcHomesData || []).map(home => [home.id, home]))
+
+  // Combine matching data with home data
+  return matchingData.map(match => {
+    const homeData = homeMap.get(match.rc_home_id)
+    return {
+      rs_service_request_id: match.rs_service_request_id,
+      rc_home_id: match.rc_home_id,
+      home_status: homeData?.home_status || null
+    }
+  }).filter(item => item.home_status !== null) // Only return items with valid home status
+}
 
 // Count total work orders with better filtering
 export const getWorkOrdersCount = async (filters = {}) => {
