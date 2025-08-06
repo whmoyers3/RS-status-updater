@@ -205,12 +205,13 @@ export const getRCHomesData = async () => {
   try {
     console.log('🔍 Starting RC Homes data fetch...')
     
-    // First get the matching lookup data with service request IDs
+    // First get the matching lookup data with service request IDs - GET ALL RECORDS
     const { data: matchingData, error: matchingError } = await supabase
       .from('rc_rs_matching_lookup')
       .select('rs_service_request_id, rc_home_id')
       .not('rs_service_request_id', 'is', null)
       .not('rc_home_id', 'is', null)
+      .limit(10000) // Increase limit to ensure we get all records
 
     if (matchingError) {
       console.error('❌ Failed to fetch RC matching data:', matchingError.message)
