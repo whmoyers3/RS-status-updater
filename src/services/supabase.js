@@ -53,6 +53,20 @@ export const getWorkOrders = async (filters = {}) => {
   const statusMap = new Map(statusData.map(status => [status.status_id, status]))
   const fieldworkerMap = new Map(fieldworkerData.map(fw => [fw.id, fw]))
   const rcHomesMap = new Map(rcHomesData.map(home => [home.rs_service_request_id, home]))
+  
+  console.log('🗺️ RC Homes Map created with keys:', Array.from(rcHomesMap.keys()).slice(0, 10))
+
+  console.log('🗺️ RC Homes Map Debug:')
+  console.log(`RC Homes Map size: ${rcHomesMap.size}`)
+  console.log('First 5 RC map entries:', Array.from(rcHomesMap.entries()).slice(0, 5))
+  
+  // Test specific IDs we know should match
+  const testIds = [35906, 35945, 36151, 35281]
+  console.log('🔍 Testing specific service request IDs:')
+  testIds.forEach(id => {
+    const match = rcHomesMap.get(id)
+    console.log(`ID ${id}: ${match ? `Found - ${match.home_status}` : 'NOT FOUND'}`)
+  })
 
   // Combine the data manually
   const enrichedWorkOrders = (workOrders || []).map(workOrder => {
@@ -74,9 +88,18 @@ export const getWorkOrders = async (filters = {}) => {
   console.log(`📋 Work orders with service IDs: ${workOrdersWithServiceIds.length}`)
   
   if (workOrdersWithServiceIds.length > 0) {
-    const serviceIds = workOrdersWithServiceIds.map(wo => wo.rs_service_request_id)
+    const serviceIds = workOrdersWithServiceIds.map(wo => parseInt(wo.rs_service_request_id))
     console.log(`🔢 Service ID range: ${Math.min(...serviceIds)} - ${Math.max(...serviceIds)}`)
     console.log('🔍 First 5 service IDs:', serviceIds.slice(0, 5))
+    
+    // Test specific work orders we know should match
+    const testWorkOrders = workOrders.filter(wo => ['63700', '63941'].includes(wo.rs_id))
+    console.log('🧪 Testing specific work orders:')
+    testWorkOrders.forEach(wo => {
+      const serviceId = parseInt(wo.rs_service_request_id)
+      const match = rcHomesMap.get(serviceId)
+      console.log(`WO ${wo.rs_id} (service_id: ${serviceId}): ${match ? `Found - ${match.home_status}` : 'NOT FOUND'}`)
+    })
     
     const matchedCount = enrichedWorkOrders.filter(wo => wo.rc_home).length
     console.log(`✅ Matched RC homes: ${matchedCount}/${workOrders.length}`)
@@ -88,6 +111,8 @@ export const getWorkOrders = async (filters = {}) => {
         rs_service_request_id: sample.rs_service_request_id,
         rc_home_status: sample.rc_home?.home_status
       })
+    } else {
+      console.log('⚠️ NO MATCHES FOUND - this indicates a bug in the matching logic')
     }
   }
 
@@ -251,6 +276,7 @@ export const getRCHomesData = async () => {
     const minId = Math.min(...serviceRequestIds)
     const maxId = Math.max(...serviceRequestIds)
     console.log(`📈 Service Request ID range: ${minId} - ${maxId}`)
+    console.log('🔑 Sample Map keys:', serviceRequestIds.slice(0, 10))
     
     return result
     
