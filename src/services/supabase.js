@@ -12,9 +12,9 @@ export const getWorkOrders = async (filters = {}) => {
     .from('rs_work_orders')
     .select(`
       *,
-      rs_status_lookup (*),
-      fieldworkers:rs_field_worker_id (*),
-      rc_home:rc_home_id (id, home_status)
+      rs_status_lookup!rs_status_id (*),
+      fieldworkers!rs_field_worker_id (*),
+      rc_homes!rc_home_id (id, home_status)
     `)
     .order('rs_start_date', { ascending: true })
 
@@ -72,9 +72,9 @@ export const getWorkOrderById = async (id) => {
     .from('rs_work_orders')
     .select(`
       *,
-      rs_status_lookup (*),
-      fieldworkers:rs_field_worker_id (*),
-      rc_home:rc_home_id (id, home_status)
+      rs_status_lookup!rs_status_id (*),
+      fieldworkers!rs_field_worker_id (*),
+      rc_homes!rc_home_id (id, home_status)
     `)
     .or(`rs_id.eq.${id},rs_custom_id.eq.${id}`)
     .single()
