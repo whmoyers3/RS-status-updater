@@ -52,56 +52,39 @@ export const getWorkOrders = async (filters = {}) => {
   // Create lookup maps for better performance
   const statusMap = new Map(statusData.map(status => [status.status_id, status]))
   const fieldworkerMap = new Map(fieldworkerData.map(fw => [fw.id, fw]))
-  const rcHomesMap = new Map(rcHomesData.map(home => [home.rs_service_request_id, home]))
-  
+  const rcHomesMap = new Map(rcHomesData.map(home => [home.rc_home_id, home]))
+
   console.log('🗺️ RC Homes Map Debug:')
   console.log(`RC Homes Map size: ${rcHomesMap.size}`)
   console.log('First 5 RC map entries:', Array.from(rcHomesMap.entries()).slice(0, 5))
-  
-  // Test specific service request IDs we know should match
-  const testIds = [37642, 37634, 37710, 37697, 37447]
-  console.log('🔍 Testing specific service request IDs from recent data:')
-  testIds.forEach(id => {
-    const match = rcHomesMap.get(id)
-    console.log(`ID ${id}: ${match ? `Found - ${match.home_status} (rc_home_id: ${match.rc_home_id})` : 'NOT FOUND'}`)
-  })
 
-  // Combine the data manually
+  // Combine the data manually using direct rc_home_id relationship
   const enrichedWorkOrders = (workOrders || []).map(workOrder => {
-    // Ensure we're comparing the same data types
-    const workOrderServiceId = workOrder.rs_service_request_id ? parseInt(workOrder.rs_service_request_id) : null
-    const rcHome = workOrderServiceId ? rcHomesMap.get(workOrderServiceId) : null
+    // Use direct rc_home_id from work order
+    const rcHome = workOrder.rc_home_id ? rcHomesMap.get(workOrder.rc_home_id) : null
     
     return {
       ...workOrder,
       rs_status_lookup: statusMap.get(workOrder.rs_status_id) || null,
       fieldworkers: fieldworkerMap.get(workOrder.rs_field_worker_id) || null,
-      rc_home: rcHome ? {
-        ...rcHome,
-        // Ensure rc_home_id is available at the expected path for the link
-        rc_home_id: rcHome.rc_home_id
-      } : null
+      rc_home: rcHome || null
     }
   })
 
   // Add debugging for RC home matching
   console.log('🔗 Work Order to RC Home matching debug:')
-  const workOrdersWithServiceIds = workOrders.filter(wo => wo.rs_service_request_id)
-  console.log(`📋 Work orders with service IDs: ${workOrdersWithServiceIds.length}`)
+  const workOrdersWithRCIds = workOrders.filter(wo => wo.rc_home_id)
+  console.log(`📋 Work orders with RC home IDs: ${workOrdersWithRCIds.length}`)
   
-  if (workOrdersWithServiceIds.length > 0) {
-    const serviceIds = workOrdersWithServiceIds.map(wo => parseInt(wo.rs_service_request_id))
-    console.log(`🔢 Service ID range: ${Math.min(...serviceIds)} - ${Math.max(...serviceIds)}`)
-    console.log('🔍 First 10 work order service IDs:', serviceIds.slice(0, 10))
+  if (workOrdersWithRCIds.length > 0) {
+    const rcHomeIds = workOrdersWithRCIds.map(wo => wo.rc_home_id)
+    console.log('🏠 First 10 RC home IDs from work orders:', rcHomeIds.slice(0, 10))
     
-    // Test current work orders that should match
-    const recentTestIds = [37642, 37634, 37710, 37697, 37447]
-    const recentTestOrders = workOrders.filter(wo => recentTestIds.includes(parseInt(wo.rs_service_request_id)))
-    console.log('🧪 Testing recent work orders that should match:')
-    recentTestOrders.forEach(wo => {
-      const serviceId = parseInt(wo.rs_service_request_id)
-      const match = rcHomesMap.get(serviceId)
-      console.log(`WO ${wo.rs_id} (service_id: ${serviceId}): ${match ? `Found - ${match.home_status} (rc_home_id: ${match.rc_home_id})` : 'NOT FOUND'}`)
+    // Test specific work orders to see if they match
+    console.log('🧪 Testing RC home matches:')
+    rcHomeIds.slice(0, 5).forEach(rcHomeId => {
+      const match = rcHomesMap.get(rcHomeId)
+      console.log(`RC Home ID ${rcHomeId}: ${match ? `Found - ${match.home_status}` : 'NOT FOUND'}`)
     })
     
     const matchedCount = enrichedWorkOrders.filter(wo => wo.rc_home).length
@@ -111,12 +94,11 @@ export const getWorkOrders = async (filters = {}) => {
       const sample = enrichedWorkOrders.find(wo => wo.rc_home)
       console.log('📄 Sample matched work order:', {
         rs_id: sample.rs_id,
-        rs_service_request_id: sample.rs_service_request_id,
-        rc_home_status: sample.rc_home?.home_status,
-        rc_home_id: sample.rc_home?.rc_home_id
+        rc_home_id: sample.rc_home_id,
+        rc_home_status: sample.rc_home?.home_status
       })
     } else {
-      console.log('⚠️ NO MATCHES FOUND - this indicates a bug in the matching logic')
+      console.log('⚠️ NO MATCHES FOUND - check rc_home_id values')
     }
   }
 
@@ -147,14 +129,14 @@ export const getWorkOrderById = async (id) => {
 
   const statusMap = new Map(statusData.map(status => [status.status_id, status]))
   const fieldworkerMap = new Map(fieldworkerData.map(fw => [fw.id, fw]))
-  const rcHomesMap = new Map(rcHomesData.map(home => [home.rs_service_request_id, home]))
+  const rcHomesMap = new Map(rcHomesData.map(home => [home.rc_home_id, home]))
 
-  // Enrich the work order with related data
+  // Enrich the work order with related data using direct rc_home_id
   return {
     ...workOrder,
     rs_status_lookup: statusMap.get(workOrder.rs_status_id) || null,
     fieldworkers: fieldworkerMap.get(workOrder.rs_field_worker_id) || null,
-    rc_home: rcHomesMap.get(workOrder.rs_service_request_id) || null
+    rc_home: workOrder.rc_home_id ? rcHomesMap.get(workOrder.rc_home_id) : null
   }
 }
 
@@ -204,41 +186,36 @@ export const getFieldworkers = async () => {
 // Remove the old getIncompleteWorkOrders function as it's no longer needed
 // The new filtering system handles this at the database level
 
-// Get RC homes data with matching lookup - using reliable approach
+// Get RC homes data - now using direct rc_home_id from work orders
 export const getRCHomesData = async () => {
   try {
-    console.log('🔍 Starting RC Homes data fetch...')
+    console.log('🔍 Starting RC Homes data fetch using direct rc_home_id...')
     
-    // First get the matching lookup data with service request IDs - GET ALL RECORDS
-    const { data: matchingData, error: matchingError } = await supabase
-      .from('rc_rs_matching_lookup')
-      .select('rs_service_request_id, rc_home_id')
-      .not('rs_service_request_id', 'is', null)
+    // Get all unique rc_home_ids from work orders that have them
+    const { data: workOrdersWithRCIds, error: workOrdersError } = await supabase
+      .from('rs_work_orders')
+      .select('rc_home_id')
       .not('rc_home_id', 'is', null)
-      .limit(10000) // Increase limit to ensure we get all records
 
-    if (matchingError) {
-      console.error('❌ Failed to fetch RC matching data:', matchingError.message)
+    if (workOrdersError) {
+      console.error('❌ Failed to fetch work orders with RC home IDs:', workOrdersError.message)
       return []
     }
 
-    if (!matchingData || matchingData.length === 0) {
-      console.warn('⚠️ No RC matching data found')
+    if (!workOrdersWithRCIds || workOrdersWithRCIds.length === 0) {
+      console.warn('⚠️ No work orders with RC home IDs found')
       return []
     }
-
-    console.log(`✅ Fetched ${matchingData.length} RC matching records`)
-    console.log('📊 Sample matching data:', matchingData.slice(0, 3))
 
     // Get unique rc_home_ids
-    const rcHomeIds = [...new Set(matchingData.map(item => item.rc_home_id).filter(Boolean))]
+    const rcHomeIds = [...new Set(workOrdersWithRCIds.map(item => item.rc_home_id).filter(Boolean))]
     
     if (rcHomeIds.length === 0) {
       console.warn('⚠️ No RC home IDs found')
       return []
     }
 
-    console.log(`🏠 Found ${rcHomeIds.length} unique RC home IDs`)
+    console.log(`🏠 Found ${rcHomeIds.length} unique RC home IDs from work orders`)
 
     // Fetch RC homes data
     const { data: rcHomesData, error: homesError } = await supabase
@@ -260,38 +237,14 @@ export const getRCHomesData = async () => {
     console.log(`🏡 Fetched ${rcHomesData.length} RC homes records`)
     console.log('📊 Sample RC homes data:', rcHomesData.slice(0, 3))
 
-    // Create a map of rc_home_id to home data
-    const homeMap = new Map(rcHomesData.map(home => [home.id, home]))
+    // Return data keyed by rc_home_id for easy lookup
+    const result = rcHomesData.map(home => ({
+      rc_home_id: home.id,
+      home_status: home.home_status
+    }))
 
-    // Combine matching data with home data
-    const result = matchingData.map(match => {
-      const homeData = homeMap.get(match.rc_home_id)
-      return {
-        rs_service_request_id: parseInt(match.rs_service_request_id), // Ensure integer
-        rc_home_id: match.rc_home_id,
-        home_status: homeData?.home_status || null
-      }
-    }).filter(item => item.home_status !== null && item.rs_service_request_id !== null)
-
-    console.log(`🎯 Final RC Homes data: ${result.length} records with valid matches`)
-    console.log('📊 Sample final data:', result.slice(0, 5))
-    
-    // Log some statistics
-    if (result.length > 0) {
-      const serviceRequestIds = result.map(r => r.rs_service_request_id)
-      const minId = Math.min(...serviceRequestIds)
-      const maxId = Math.max(...serviceRequestIds)
-      console.log(`📈 Service Request ID range: ${minId} - ${maxId}`)
-      console.log('🔑 Sample service request IDs:', serviceRequestIds.slice(0, 10))
-      
-      // Test specific IDs we know should be there
-      const testIds = [37642, 37634, 37710, 37697, 37447]
-      console.log('🧪 Testing for recent service request IDs:')
-      testIds.forEach(id => {
-        const found = result.find(r => r.rs_service_request_id === id)
-        console.log(`Service ID ${id}: ${found ? `✅ Found - ${found.home_status} (rc_home_id: ${found.rc_home_id})` : '❌ NOT FOUND'}`)
-      })
-    }
+    console.log(`🎯 Final RC Homes data: ${result.length} records`)
+    console.log('📊 Sample final data:', result.slice(0, 3))
     
     return result
     
