@@ -11,7 +11,11 @@ export const getWorkOrders = async (filters = {}) => {
   let query = supabase
     .from('rs_work_orders')
     .select('*')
-    .order('rs_start_date', { ascending: true })
+
+  // Apply dynamic ordering based on filters
+  const orderBy = filters.order_by || 'rs_start_date'
+  const orderDirection = filters.order_direction || 'asc'
+  query = query.order(orderBy, { ascending: orderDirection === 'asc' })
 
   // Apply filters at database level for better performance
   if (filters.field_worker_id) {

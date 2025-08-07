@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RazorSync API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .log { background: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 5px; height: 400px; overflow-y: auto; }
+        .button { background: #007cba; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 10px 5px; }
+        .button:hover { background: #005a8a; }
+        .success { color: #008000; }
+        .error { color: #ff0000; }
+        .warning { color: #ff8800; }
+    </style>
+</head>
+<body>
+    <h1>RazorSync API Test</h1>
+    <button class="button" onclick="testAPI()">Test Work Order 60254</button>
+    <button class="button" onclick="clearLog()">Clear Log</button>
+    
+    <div id="log" class="log">
+        <p>Click "Test Work Order 60254" to start...</p>
+    </div>
+
+    <script>
+        const RAZORSYNC_CONFIG = {
+            token: '4442a145-bf1b-4cc4-bfd1-026587d5b037',
+            host: 'vallus.0.razorsync.com',
+            serverName: 'vallus',
+            baseUrl: 'https://vallus.0.razorsync.com/ApiService.svc'
+        }
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log')
+            const timestamp = new Date().toLocaleTimeString()
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : ''
+            logDiv.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`
+            logDiv.scrollTop = logDiv.scrollHeight
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '<p>Log cleared...</p>'
+        }
+
+        async function testAPI() {
+            clearLog()
+            log('🚀 Starting RazorSync API test...')
+            
+            const workOrderId = '60254'
+            const url = `${RAZORSYNC_CONFIG.baseUrl}/WorkOrder/${workOrderId}`
+            
+            const headers = {
+                'Content-Type': 'application/json',
+                'Token': RAZORSYNC_CONFIG.token,
+                'Host': RAZORSYNC_CONFIG.host,
+                'ServerName': RAZORSYNC_CONFIG.serverName,
+                'Connection': 'Keep-Alive'
+            }
+
+            log(`🌐 Testing GET ${url}`)
+            log(`📋 Headers: ${JSON.stringify(headers, null, 2)}`)
+
+            try {
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers
+                })
+                
+                log(`📊 Response status: ${response.status}`, response.ok ? 'success' : 'error')
+                log(`📊 Response ok: ${response.ok}`)
+                log(`📊 Content-Type: ${response.headers.get('content-type')}`)
+                log(`📊 Content-Length: ${response.headers.get('content-length')}`)
+                
+                if (response.headers.get('content-length') === '0') {
+                    log(`⚠️ Empty response detected - work order likely doesn't exist`, 'warning')
+                    return null
+                }
+                
+                if (response.ok && response.headers.get('content-type')?.includes('application/json')) {
+                    const data = await response.json()
+                    log(`✅ Success! Work order found:`, 'success')
+                    log(`📦 Data: ${JSON.stringify(data, null, 2)}`)
+                    return data
+                }
+                
+                log(`❌ Unexpected response format`, 'error')
+                return null
+                
+            } catch (error) {
+                log(`❌ Fetch error: ${error.message}`, 'error')
+                console.error('Full error:', error)
+                throw error
+            }
+        }
+    </script>
+</body>
+</html>

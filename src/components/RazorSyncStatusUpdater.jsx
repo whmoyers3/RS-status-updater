@@ -39,7 +39,9 @@ const RazorSyncStatusUpdater = () => {
     status_ids: [],
     limit: itemsPerPage,
     offset: 0,
-    show_future: false
+    show_future: false,
+    order_by: 'rs_start_date',
+    order_direction: 'asc'
   });
 
   const { workOrders, loading, error, totalCount, refresh } = useWorkOrders(filters, true);
@@ -83,6 +85,37 @@ const RazorSyncStatusUpdater = () => {
       show_future: showFutureEvents
     }));
   }, [selectedFieldWorker, selectedStatusIds, currentPage, itemsPerPage, showFutureEvents]);
+
+  const handleRefreshData = async () => {
+    setIsLoading(true);
+    try {
+      // Call the webhook
+      const webhookUrl = 'http://24.158.242.116:5678/webhook/672008ff-0465-4977-bbf7-426371c06bc6';
+      
+      showNotification('Refreshing data from source... Data will refresh in 5 seconds', 'info');
+      
+      // Make webhook call
+      try {
+        await fetch(webhookUrl, { method: 'GET' });
+      } catch (webhookError) {
+        console.warn('Webhook call failed:', webhookError);
+        // Continue with refresh even if webhook fails
+      }
+      
+      // Wait 5 seconds then refresh
+      setTimeout(() => {
+        refresh();
+        showNotification('Data refreshed successfully', 'success');
+        setIsLoading(false);
+      }, 5000);
+      
+    } catch (error) {
+      console.error('Refresh failed:', error);
+      showNotification('Refresh failed, trying local refresh only', 'warning');
+      refresh();
+      setIsLoading(false);
+    }
+  };
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type });
@@ -239,11 +272,28 @@ const RazorSyncStatusUpdater = () => {
       direction = 'desc';
     }
     setSortConfig({ key, direction });
+    
+    // If we have more than 250 records and sorting by start date, update filters to refresh from database
+    if (totalCount > 250 && key === 'rs_start_date') {
+      setFilters(prev => ({
+        ...prev,
+        order_by: key,
+        order_direction: direction
+      }));
+      setCurrentPage(1); // Reset to first page
+    }
   };
 
   const getSortedWorkOrders = () => {
     if (!workOrders) return [];
     
+    // If we have more than 250 records and we're sorting by start date,
+    // the sorting is done at the database level
+    if (totalCount > 250 && sortConfig.key === 'rs_start_date') {
+      return workOrders; // Already sorted by database
+    }
+    
+    // Otherwise, sort locally
     const sortedOrders = [...workOrders].sort((a, b) => {
       let aValue = a[sortConfig.key];
       let bValue = b[sortConfig.key];
@@ -399,16 +449,10 @@ const RazorSyncStatusUpdater = () => {
             <div className="flex items-center">
               <Edit3 className="w-8 h-8 text-blue-600 mr-3" />
               <h1 className="text-2xl font-bold text-gray-900">RazorSync Status Updater</h1>
-              <div className="ml-6 flex items-center px-3 py-1 bg-blue-50 rounded-full">
-                <Users className="w-4 h-4 text-blue-600 mr-2" />
-                <span className="text-sm text-blue-700 font-medium">
-                  {currentUser.name}
-                </span>
-              </div>
             </div>
             <div className="flex items-center space-x-4">
               <button 
-                onClick={refresh}
+                onClick={handleRefreshData}
                 disabled={loading}
                 className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
               >
@@ -536,7 +580,7 @@ const RazorSyncStatusUpdater = () => {
                     <span className="text-sm font-medium text-gray-700">Show Future Events</span>
                   </label>
                   <button
-                    onClick={refresh}
+                    onClick={handleRefreshData}
                     disabled={loading}
                     className="w-full px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:bg-gray-300 transition-colors"
                   >
@@ -634,7 +678,7 @@ const RazorSyncStatusUpdater = () => {
             <div className="bg-white rounded-lg shadow overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                 <h3 className="text-lg font-medium text-gray-900">
-                  Showing {sortedAndFilteredOrders.length} of {effectiveTotalCount} results
+                  Showing {sortedAndFilteredOrders.length} of {totalCount} results
                   {totalCount > maxRecords && (
                     <span className="text-sm text-orange-600 ml-2">
                       (Limited to {maxRecords} records - use filters to narrow results)
@@ -735,7 +779,7 @@ const RazorSyncStatusUpdater = () => {
                           <td className="px-3 py-2 whitespace-nowrap">
                             {workOrder.rc_home?.home_status ? (
                               <a
-                                href={`https://rcdog.gearheadforhire.com/homes/${workOrder.rc_home.rc_home_id}`}
+                                href={`https://rcdog.gearheadforhire.com/homes/${workOrder.rc_homes_id || workOrder.rc_home?.rc_homes_id || workOrder.rc_home_id}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
@@ -818,7 +862,7 @@ const RazorSyncStatusUpdater = () => {
                     <label className="block text-sm font-medium text-gray-700">RC Status</label>
                     {searchResult.rc_home?.home_status ? (
                       <a
-                        href={`https://rcdog.gearheadforhire.com/homes/${searchResult.rc_home.rc_home_id}`}
+                        href={`https://rcdog.gearheadforhire.com/homes/${searchResult.rc_homes_id || searchResult.rc_home?.rc_homes_id || searchResult.rc_home_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer inline-block mt-1"

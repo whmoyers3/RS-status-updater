@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, X } from 'lucide-react';
 
 const MultiSelectDropdown = ({ 
   options = [], 
@@ -30,6 +30,10 @@ const MultiSelectDropdown = ({
     onChange(newSelectedValues);
   };
 
+  const handleClearAll = () => {
+    onChange([]);
+  };
+
   const getDisplayText = () => {
     if (selectedValues.length === 0) return placeholder;
     if (selectedValues.length === 1) {
@@ -52,6 +56,17 @@ const MultiSelectDropdown = ({
 
       {isOpen && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+          {selectedValues.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              className="w-full px-3 py-2 text-left hover:bg-red-50 border-b border-gray-200 text-red-600 flex items-center justify-between font-medium"
+            >
+              <span>Clear Selection</span>
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          
           {options.map((option) => (
             <button
               key={option.value}
